@@ -1,0 +1,13 @@
+body {
+  width: 140px;
+  font: 13px/1.4 "Segoe UI", Calibri, sans-serif;
+  margin: 10px;
+}
+button {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+  padding: 6px 0;
+  font-size: 13px;
+  cursor: pointer;
+}

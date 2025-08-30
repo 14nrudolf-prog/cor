@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Corrigo Work-Order Helper",
+  "version": "1.0.0",
+  "description": "Update snapshots and generate colour-coded WO overviews.",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "downloads",
+    "storage",
+    "scripting" 
+  ],
+  "host_permissions": [
+    "https://jll-oracle.corrigo.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Corrigo Helper",
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://jll-oracle.corrigo.com/corpnet/workorder/workorderlist.aspx*"
+      ],
+      "js": ["content/list.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://jll-oracle.corrigo.com/corpnet/workorder/workorderdetails.aspx/*"
+      ],
+      "js": ["content/details.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
