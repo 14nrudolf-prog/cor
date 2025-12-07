@@ -12,10 +12,10 @@
 
     // Make a stable signature for each log row
     const makeLogKey = it => [
-      it?.ActionDateTime || '',
-      it?.ActionBy       || '',
-      it?.ActionTitle    || '',
-      it?.Comment        || ''
+      (it && it.ActionDateTime) || '',
+      (it && it.ActionBy)       || '',
+      (it && it.ActionTitle)    || '',
+      (it && it.Comment)        || ''
     ].join('||');
 
     // Does current activity log contain a *new* item (not seen in ANY older snapshot)?
@@ -53,7 +53,9 @@
         if (k === 'Activity log') {
           if (activityLogHasNew(id, a, b)) fields.push('Activity log');
         } else {
-          if (norm(a?.[k]) !== norm(b?.[k])) fields.push(k);
+          const av = a ? a[k] : undefined;
+          const bv = b ? b[k] : undefined;
+          if (norm(av) !== norm(bv)) fields.push(k);
         }
       }
       return fields;
@@ -106,7 +108,7 @@
         rows.push({
           ...row,
           Updated: label,
-          'Comment / last update (previous)': (opts.prevComments?.[key]) || latestLogText(row),
+          'Comment / last update (previous)': ((opts.prevComments && opts.prevComments[key]) || latestLogText(row)),
           'Comment / last update (new)': ''
         });
       }
@@ -114,4 +116,4 @@
 
     return rows;
   };
-})(typeof window === 'undefined' ? globalThis : window);
+})(typeof window === 'undefined' ? self : window);

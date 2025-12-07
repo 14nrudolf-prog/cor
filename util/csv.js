@@ -63,7 +63,7 @@ function escape(v) {
     headers = row.map(h => (h || '').replace(/\uFEFF/g, '').trim());
     } else {
         const obj = {};
-        headers.forEach((h, i) => obj[h] = row[i] ?? '');
+        headers.forEach((h, i) => obj[h] = (row[i] != null ? row[i] : ''));
         out.push(obj);
       }
       row = [];
@@ -97,4 +97,4 @@ function escape(v) {
 
     return out;
   };
-})(typeof window === 'undefined' ? globalThis : window);
+})(typeof window === 'undefined' ? self : window);
