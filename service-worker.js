@@ -2,6 +2,7 @@
 importScripts('util/csv.js', 'util/snapshot.js', 'util/storage.js');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const MAX_DETAIL_TABS_PER_BATCH = 20;
 
 // Open Options page when the toolbar icon is clicked (no popup)
 chrome.action.onClicked.addListener(() => {
@@ -142,12 +143,30 @@ async function handleListData(listData) {
   const idsToFetch = currentUpdate.mode === 'store' ? [...currentIds] : [...currentIds, ...extraIds];
   idsToFetch.forEach(id => currentUpdate.remainingIds.add(id));
 
-  idsToFetch.forEach(id => {
+  // Batch detail tabs so we don't overload the browser; manual expansion of activity logs still happens per tab.
+  currentUpdate.detailQueue = idsToFetch.slice();
+  currentUpdate.activeBatchIds = new Set();
+  currentUpdate.batchSize = MAX_DETAIL_TABS_PER_BATCH;
+  openNextDetailsBatch();
+}
+
+function openNextDetailsBatch() {
+  if (!currentUpdate) return;
+  const queue = currentUpdate.detailQueue || [];
+  if (!queue.length) return;
+  if (currentUpdate.activeBatchIds && currentUpdate.activeBatchIds.size > 0) return; // still processing
+
+  const batchSize = currentUpdate.batchSize || MAX_DETAIL_TABS_PER_BATCH;
+  const batch = queue.splice(0, batchSize);
+  currentUpdate.activeBatchIds = new Set(batch);
+
+  batch.forEach(id => {
     chrome.tabs.create({
       url: `https://jll-oracle.corrigo.com/corpnet/workorder/workorderdetails.aspx/${id}`,
       active: false
     });
   });
+  console.log(`[SW] opened details batch of ${batch.length}; ${queue.length} remaining`);
 }
 
 /**
@@ -176,6 +195,10 @@ async function handleDetailsData(details, tabId) {
 
   // mark done for this ID
   currentUpdate.remainingIds.delete(ID);
+  if (currentUpdate.activeBatchIds) currentUpdate.activeBatchIds.delete(ID);
+  if (currentUpdate.activeBatchIds && currentUpdate.activeBatchIds.size === 0) {
+    openNextDetailsBatch();
+  }
 
   // keep the tab open in debug mode
   if (!DEBUG_DETAILS && tabId) chrome.tabs.remove(tabId);
