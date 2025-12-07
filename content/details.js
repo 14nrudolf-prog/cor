@@ -11,7 +11,10 @@ function getActivityPagerText() {
 
   // fallback to your original DOM path
   try {
-    const t = root.children?.[1]?.children?.[1]?.children?.[3]?.textContent?.trim();
+    let a = root && root.children && root.children[1];
+    a = a && a.children && a.children[1];
+    a = a && a.children && a.children[3];
+    const t = a && a.textContent ? a.textContent.trim() : '';
     if (t) return t;
   } catch (_) {}
 
@@ -51,15 +54,18 @@ function readStatus() {
   let status = '';
   const pairs = document.querySelectorAll('.lv-pair');
   for (const p of pairs) {
-    const label = p.querySelector('.lv-label')?.textContent.trim();
+    const labelNode = p.querySelector('.lv-label');
+    const label = labelNode && labelNode.textContent ? labelNode.textContent.trim() : '';
     if (label === 'Status') {
-      status = p.querySelector('.lv-value span')?.textContent.trim() || '';
+      const v = p.querySelector('.lv-value span');
+      status = (v && v.textContent ? v.textContent.trim() : '') || '';
       break;
     }
   }
   // Fallback to generic class seen on Corrigo
   if (!status) {
-    status = document.querySelector('.lv-value span.lv-value-types-enhanced')?.textContent.trim() || '';
+    const v2 = document.querySelector('.lv-value span.lv-value-types-enhanced');
+    status = (v2 && v2.textContent ? v2.textContent.trim() : '') || '';
   }
   return { value: status, loaded: !!status };
 }
@@ -68,7 +74,7 @@ function readStatus() {
 // ----- ACTIVITY LOG (array of objects) -----
 function readActivityLog() {
   const gridRoot = document.querySelector('[data-role="woactivityloggrid"]');
-  const table = gridRoot?.querySelector('table');
+  const table = gridRoot && gridRoot.querySelector ? gridRoot.querySelector('table') : null;
   if (!table) return { rows: [], loaded: false, pagerText: null, fullyExpanded: true };
 
   const tb = table.querySelector('tbody');
@@ -78,11 +84,14 @@ function readActivityLog() {
   if (!trs.length) return { rows: [], loaded: false, pagerText: null, fullyExpanded: true };
 
   // "No Records Found" row?
-  if (trs.length === 1 && trs[0].querySelector('td')?.getAttribute('colspan')) {
-    const txt = trs[0].textContent.trim();
-    if (/No Records Found/i.test(txt)) {
-      const pagerText = getActivityPagerText();
-      return { rows: [], loaded: true, pagerText, fullyExpanded: true };
+  if (trs.length === 1) {
+    const td = trs[0].querySelector('td');
+    if (td && td.getAttribute('colspan')) {
+      const txt = trs[0].textContent.trim();
+      if (/No Records Found/i.test(txt)) {
+        const pagerText = getActivityPagerText();
+        return { rows: [], loaded: true, pagerText, fullyExpanded: true };
+      }
     }
   }
 
@@ -94,7 +103,8 @@ function readActivityLog() {
     const cells = [...tr.querySelectorAll('td')];
     const obj = {};
     headers.forEach((h, i) => {
-      obj[h] = cells[i]?.textContent.trim() || '';
+      const c = cells[i];
+      obj[h] = (c && c.textContent ? c.textContent.trim() : '') || '';
     });
     return obj;
   });
@@ -124,9 +134,12 @@ function readProceduresProgress() {
   if (!trs.length) return { value: '', loaded: false };
 
   // "No Records Found"
-  if (trs.length === 1 && trs[0].querySelector('td')?.getAttribute('colspan')) {
-    const txt = trs[0].textContent.trim();
-    if (/No Records Found/i.test(txt)) return { value: '', loaded: true };
+  if (trs.length === 1) {
+    const td = trs[0].querySelector('td');
+    if (td && td.getAttribute('colspan')) {
+      const txt = trs[0].textContent.trim();
+      if (/No Records Found/i.test(txt)) return { value: '', loaded: true };
+    }
   }
 
   if (stepsIdx < 0) return { value: '', loaded: false };
@@ -135,7 +148,8 @@ function readProceduresProgress() {
   const dataTr = trs.find(tr => tr.querySelectorAll('td').length > stepsIdx);
   if (!dataTr) return { value: '', loaded: false };
 
-  const raw = dataTr.querySelectorAll('td')[stepsIdx]?.textContent.trim() || '';
+  const td = dataTr.querySelectorAll('td')[stepsIdx];
+  const raw = (td && td.textContent ? td.textContent.trim() : '') || '';
   const m = raw.match(/(\d+)\s*of\s*(\d+)/i);
   if (m) {
     return { value: `${m[1]}/${m[2]}`, loaded: true };
