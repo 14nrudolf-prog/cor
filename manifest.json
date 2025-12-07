@@ -16,9 +16,12 @@
   "background": {
     "service_worker": "service-worker.js"
   },
+  "options_ui": {
+    "page": "options/index.html",
+    "open_in_tab": true
+  },
   "action": {
-    "default_title": "Corrigo Helper",
-    "default_popup": "popup/popup.html"
+    "default_title": "Corrigo Helper"
   },
   "content_scripts": [
     {

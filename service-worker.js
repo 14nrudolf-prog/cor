@@ -1,7 +1,18 @@
 /* global chrome */
-importScripts('util/csv.js', 'util/snapshot.js');
+importScripts('util/csv.js', 'util/snapshot.js', 'util/storage.js');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Open Options page when the toolbar icon is clicked (no popup)
+chrome.action.onClicked.addListener(() => {
+  if (chrome.runtime && typeof chrome.runtime.openOptionsPage === 'function') {
+    try { chrome.runtime.openOptionsPage(); } catch (e) {}
+  } else {
+    // Fallback: open the options URL directly
+    const url = chrome.runtime.getURL('options/index.html');
+    try { chrome.tabs.create({ url }); } catch (e) {}
+  }
+});
 
 function sendToTab(tabId, msg) {
   return new Promise(resolve => {
@@ -10,7 +21,7 @@ function sendToTab(tabId, msg) {
         console.warn('[SW] sendToTab error:', chrome.runtime.lastError.message);
         resolve(null);
       } else {
-        resolve(resp ?? true);
+        resolve(resp != null ? resp : true);
       }
     });
   });
@@ -46,13 +57,13 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
     case 'LIST_DATA': {
       // from content/list.js on the list page
-      console.log('[SW] LIST_DATA count=', msg.listData?.length);
+      console.log('[SW] LIST_DATA count=', (msg.listData && msg.listData.length));
       return handleListData(msg.listData || []);
     }
 
     case 'DETAILS_DATA': {
       // from content/details.js in each details tab
-      const detailTabId = sender.tab?.id; // content script messages DO have sender.tab
+      const detailTabId = sender.tab && sender.tab.id; // content script messages DO have sender.tab
       if (detailTabId == null) {
         console.warn('[SW] DETAILS_DATA without sender.tab – skipping close');
       }
@@ -61,6 +72,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
     case 'GENERATE_OVERVIEW': {
       return generateOverview(msg.csvText);
+    }
+
+    case 'SCRAPE_TO_STORE': {
+      return scrapeToStore();
     }
 
     default:
@@ -103,6 +118,11 @@ async function doUpdate(listTabId, opts) {
  */
 async function handleListData(listData) {
   if (!currentUpdate) return;
+  if (currentUpdate.listStarted) {
+    console.warn('[SW] LIST_DATA duplicate ignored');
+    return;
+  }
+  currentUpdate.listStarted = true;
 
   // 1) Map current list rows (active WOs)
   listData.forEach(row => { currentUpdate.listMap[row.ID] = { ...row }; });
@@ -118,8 +138,8 @@ async function handleListData(listData) {
   // 3) Init tracking for statuses of now-inactive WOs
   currentUpdate.inactiveStatus = {}; // { id: 'Completed'|'Cancelled'|… }
 
-  // 4) Open details for both current IDs and extra IDs
-  const idsToFetch = [...currentIds, ...extraIds];
+  // 4) Open details (for store-mode, only current IDs)
+  const idsToFetch = currentUpdate.mode === 'store' ? [...currentIds] : [...currentIds, ...extraIds];
   idsToFetch.forEach(id => currentUpdate.remainingIds.add(id));
 
   idsToFetch.forEach(id => {
@@ -150,7 +170,7 @@ async function handleDetailsData(details, tabId) {
       'Procedures progress': details['Procedures progress']
     });
   } else {
-    currentUpdate.inactiveStatus ||= {};
+    currentUpdate.inactiveStatus = currentUpdate.inactiveStatus || {};
     currentUpdate.inactiveStatus[ID] = details.Status;
   }
 
@@ -163,12 +183,142 @@ async function handleDetailsData(details, tabId) {
   // in debug mode: do not finish automatically
   if (!DEBUG_DETAILS && currentUpdate.remainingIds.size === 0) {
     try {
-      await finishUpdate();     // <-- wait
+      if (currentUpdate.mode === 'csv_update') {
+        await finishUpdate();
+      } else {
+        await finishScrapeToStore();
+      }
     } catch (e) {
       console.error(e);
     }
     currentUpdate = null;       // <-- null AFTER finishUpdate completes
   }
+}
+
+// ---------- New flow: Scrape to Store (Options page) ----------
+function tabsQuery(queryInfo) {
+  return new Promise(resolve => chrome.tabs.query(queryInfo, resolve));
+}
+function tabsCreate(createProps) {
+  return new Promise(resolve => chrome.tabs.create(createProps, resolve));
+}
+
+async function openOrFocusListTab() {
+  // Create and focus a fresh list tab so it’s visible to the user
+  const t = await tabsCreate({ url: 'https://jll-oracle.corrigo.com/corpnet/workorder/workorderlist.aspx', active: true });
+  return t && t.id;
+}
+
+function tabsGet(tabId) {
+  return new Promise(resolve => {
+    try { chrome.tabs.get(tabId, t => resolve(t)); }
+    catch (e) { resolve(null); }
+  });
+}
+
+async function ensureListContentScript(tabId) {
+  // Try a ping; if no response, attempt explicit injection
+  const ping = await sendToTab(tabId, { type: 'PING' });
+  if (ping && ping.ok) return true;
+  try { await executeScriptFiles(tabId, ['content/list.js']); } catch (e) {}
+  const ping2 = await sendToTab(tabId, { type: 'PING' });
+  return !!(ping2 && ping2.ok);
+}
+
+async function waitForDailyOverview(tabId, timeoutMs = 300000) { // up to 5 minutes to allow login + nav
+  const start = Date.now();
+  let alerted = false;
+  while (Date.now() - start < timeoutMs) {
+    const t = await tabsGet(tabId);
+    if (!t) return false;
+    const url = (t.url || '').toLowerCase();
+    const isList = url.includes('/corpnet/workorder/workorderlist.aspx');
+    const isLogin = url.includes('/corpnet/login.aspx');
+
+    if (isList) {
+      const ready = await ensureListContentScript(tabId);
+      if (!ready) { await sleep(1000); continue; }
+      // First time on list page and wrong view: alert once and continue
+      if (!alerted) {
+        const resp0 = await sendToTab(tabId, { type: 'CHECK_AND_ALERT_DAILY_OVERVIEW' });
+        if (resp0 && resp0.ok) return true;
+        alerted = true;
+      }
+      const resp = await sendToTab(tabId, { type: 'CHECK_DAILY_OVERVIEW' });
+      if (resp && resp.ok) return true;
+    }
+    // If login or elsewhere, just keep waiting
+    await sleep(1000);
+  }
+  return false;
+}
+
+function executeScriptFiles(tabId, files) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.scripting.executeScript({ target: { tabId }, files }, () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(true);
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function scrapeToStore() {
+  console.log(111)
+  if (currentUpdate) return; // skip if already scraping
+  console.log(222)
+  const listTabId = await openOrFocusListTab();
+  if (listTabId == null) return;
+
+  // robustly wait across login/navigation until Daily Overview is selected
+  const okView = await waitForDailyOverview(listTabId);
+  if (!okView) {
+    console.warn('[SW] Daily Overview not selected within timeout');
+    return;
+  }
+
+  // init update state for store-mode
+  currentUpdate = {
+    listMap: {},
+    remainingIds: new Set(),
+    listTabId,
+    daysWindow: 0,
+    dropRecent: 0,
+    mode: 'store'
+  };
+
+  const ack = await sendToTab(listTabId, { type: 'GET_LIST_DATA' });
+  if (!ack) {
+    console.warn('[SW] GET_LIST_DATA not acknowledged');
+    currentUpdate = null;
+    return;
+  }
+}
+
+async function finishScrapeToStore() {
+  // Merge list+details into wo_store
+  const listRows = Object.values(currentUpdate.listMap || {});
+  const { seenIds } = await WOStore.upsertFromListRows(listRows);
+  for (const id of Object.keys(currentUpdate.listMap)) {
+    const r = currentUpdate.listMap[id];
+    // merge details for each
+    await WOStore.mergeDetails(id, {
+      Status: r.Status,
+      'Activity log': r['Activity log'] || []
+    });
+  }
+  // Mark inactives
+  await WOStore.setInactiveForMissing([...seenIds]);
+  // Update last scrape timestamp
+  const store = await WOStore.getStore();
+  store.lastScrapeAt = Date.now();
+  await WOStore.setStore(store);
+  // Close the list tab we opened and notify UI to refresh
+  try { if (currentUpdate.listTabId) chrome.tabs.remove(currentUpdate.listTabId); } catch (e) {}
+  try { chrome.runtime.sendMessage({ type: 'STORE_UPDATED' }); } catch (e) {}
 }
 
 
@@ -205,10 +355,10 @@ async function finishUpdate() {
 // Build union of all previously-seen activity log items across ALL older snapshots
 function logKey(it) {
   return [
-    it?.ActionDateTime || '',
-    it?.ActionBy || '',
-    it?.ActionTitle || '',
-    it?.Comment || ''
+    (it && it.ActionDateTime) || '',
+    (it && it.ActionBy) || '',
+    (it && it.ActionTitle) || '',
+    (it && it.Comment) || ''
   ].join('||');
 }
 
@@ -285,7 +435,7 @@ function generateOverview(csvText) {
   const newComments = {};
   const commentsLatest = {}; // what Update will use as "previous"
 
-  const normId = v => String(v ?? '').trim();
+  const normId = v => String(v == null ? '' : v).trim();
   const pick = (o, keys) => {
     for (const k of keys) {
       const v = o[k];
@@ -295,7 +445,7 @@ function generateOverview(csvText) {
   };
 
   rows.forEach(r => {
-    const id = normId(r.ID ?? r['ID'] ?? r['Id'] ?? r['id']);
+    const id = normId((r.ID != null ? r.ID : (r['ID'] != null ? r['ID'] : (r['Id'] != null ? r['Id'] : r['id']))));
     if (!id) return;
 
     // prefer the user's new comment; if empty, you can decide to keep '' or fall back to previous
