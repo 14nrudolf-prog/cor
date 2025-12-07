@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Corrigo Helper Options</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Corrigo Work-Order Helper</h1>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="wos">WOs</button>
+    <button class="tab" data-tab="overview">Overview</button>
+  </nav>
+
+  <main class="content">
+    <section id="tab-wos" class="tabpanel active">
+      <div class="toolbar">
+        <button id="btnScrape" class="primary">Scrape</button>
+        <button id="btnRefresh">Refresh</button>
+        <span id="lastScrape" class="muted"></span>
+        <span id="scrapeWarn" class="warn" hidden>Reminder: please scrape – last scrape was yesterday.</span>
+        <label style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="cbHideInactive" checked>
+          <span class="muted">Hide inactive WOs</span>
+        </label>
+        <span id="woCounts" class="muted"></span>
+      </div>
+      <div class="mainarea">
+        <div class="tablewrap">
+          <table id="wosTable"></table>
+        </div>
+        <aside id="sidebar" class="sidebar collapsed">
+          <div class="sidebar-toggle" id="sidebarToggle">❯</div>
+          <div class="sidebar-body">
+            <div id="sidebarInner"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="tab-overview" class="tabpanel">
+      <div class="toolbar">
+        <span class="muted">This renders from stored WOs and last updates.</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input id="cbAsOfTomorrow" type="checkbox">
+            <span class="muted">For tomorrow</span>
+          </label>
+          <label for="darknessSlider" class="muted">Darkness</label>
+          <input id="darknessSlider" type="range" min="0" max="100" step="1" value="50">
+          <span id="darknessValue" class="muted">50%</span>
+        </div>
+      </div>
+      <iframe id="overviewFrame" src="../overview.html" class="overview-frame"></iframe>
+    </section>
+  </main>
+
+  <script src="../util/storage.js"></script>
+  <script src="app.js"></script>
+</body>
+  
+</html>
