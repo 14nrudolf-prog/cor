@@ -24,6 +24,9 @@ async function renderFromStorage() {
   renderOverview(rows);
 }
 
+const NEXT_WEEKDAY_PARAM = 'nextWeekDay';
+const OMIT_EMPTY_PARAM = 'omitEmpty';
+
 (function init() {
   renderFromStorage();
   try {
@@ -58,6 +61,20 @@ function getPickupDate(arr) {
     if (d) { const t = d.getTime(); if (t < minTime) { minTime = t; earliestStr = i.ActionDateTime || '-'; } }
   }
   return earliestStr || '-';
+}
+
+function hasUpdateOrPickup(row) {
+  const lastUpdate = (row['Last update'] || '').trim();
+  if (lastUpdate) return true;
+  const pickup = (row['Pick-up date'] || '').trim();
+  const normalizedPickup = pickup.replace(/[−—–]/g, '-');
+  if (normalizedPickup && !/^-+$/.test(normalizedPickup)) return true;
+  return false;
+}
+
+function isInspectionWO(row) {
+  const desc = (row['Description'] || '').toLowerCase();
+  return desc.includes('inspection');
 }
 
 function buildRowsFromStore(store) {
@@ -147,6 +164,15 @@ function buildRowsFromSnapshot(snap, newComments, prevComments) {
   });
 }
 
+function getNextWeekDay(date) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + 1);
+  while (next.getDay() === 0 || next.getDay() === 6) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next;
+}
+
 // Columns and layout (new order)
 const TOTAL_PX = 1440;
 const COLS_DEF = [
@@ -161,7 +187,6 @@ const COLS_DEF = [
 ];
 
 function renderOverview(rows) {
-  rows.sort((a,b) => new Date(a['Due date']) - new Date(b['Due date']));
   const table = document.getElementById('tbl');
   // reset table
   table.innerHTML = '';
@@ -179,10 +204,17 @@ function renderOverview(rows) {
   // Determine base date (today or tomorrow) via query param
   const params = new URLSearchParams(location.search);
   const asOf = params.get('asOf');
-  const base = new Date(); base.setHours(0,0,0,0);
-  if (asOf === 'tomorrow') base.setDate(base.getDate() + 1);
+  const omitEmpty = params.has(OMIT_EMPTY_PARAM);
+  let base = new Date(); base.setHours(0,0,0,0);
+  if (asOf === NEXT_WEEKDAY_PARAM) base = getNextWeekDay(base);
 
-  rows.forEach(r => {
+  const renderRows = rows.filter(row => {
+    if (!omitEmpty) return true;
+    if (!isInspectionWO(row)) return true;
+    return hasUpdateOrPickup(row);
+  });
+  renderRows.sort((a,b) => new Date(a['Due date']) - new Date(b['Due date']));
+  renderRows.forEach(r => {
     const tr = tbody.insertRow();
     // compute due-state
     var dueStr = r[keyDue] || '';

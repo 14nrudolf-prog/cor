@@ -10,6 +10,9 @@ function fmtDate(date) {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
 }
+const AS_OF_PARAM = 'nextWeekDay';
+const OMIT_EMPTY_PARAM = 'omitEmpty';
+
 function fmtDateTimeHM(s) {
   const d = new Date(s);
   if (!d || isNaN(d)) return s || '';
@@ -57,6 +60,11 @@ function mostRecentLogDate(wo) {
     if (d && !isNaN(d) && (!best || d > best)) best = d;
   }
   return best;
+}
+
+function mostRecentLogTime(wo) {
+  const date = mostRecentLogDate(wo);
+  return date ? date.getTime() : null;
 }
 
 function computeRowClasses(wo) {
@@ -125,7 +133,18 @@ function renderWOsTable(store) {
   const hideInactive = !!(document.getElementById('cbHideInactive') && document.getElementById('cbHideInactive').checked);
   const list = all
     .filter(w => hideInactive ? !w.inactive : true)
-    .sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
+    .sort((a,b) => {
+      const timeA = mostRecentLogTime(a);
+      const timeB = mostRecentLogTime(b);
+      if (timeA && timeB) return timeB - timeA; // newer activities first
+      if (timeA && !timeB) return -1;
+      if (!timeA && timeB) return 1;
+      const dueA = new Date(a.dueDate);
+      const dueB = new Date(b.dueDate);
+      const da = isNaN(dueA) ? Number.POSITIVE_INFINITY : dueA.getTime();
+      const db = isNaN(dueB) ? Number.POSITIVE_INFINITY : dueB.getTime();
+      return da - db;
+    });
 
   const countsEl = document.getElementById('woCounts');
   if (countsEl) countsEl.textContent = `Active: ${activeCount}  |  Inactive: ${inactiveCount}`;
@@ -303,21 +322,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Darkness slider for overview iframe
+  function shouldAutoSelectNextWeekDay() {
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun, 5=Fri, 6=Sat
+    const hour = now.getHours();
+    if (day === 5 && hour >= 17) return true;
+    if (day === 6 || day === 0) return true;
+    return hour >= 17;
+  }
   const frame = document.getElementById('overviewFrame');
   const slider = document.getElementById('darknessSlider');
   const valEl = document.getElementById('darknessValue');
-  const asOfCb = document.getElementById('cbAsOfTomorrow');
+  const asOfCb = document.getElementById('cbAsOfNextWeekDay');
+  const omitEmptyCb = document.getElementById('cbOmitEmpty');
   function updateOverviewAsOf() {
     if (!frame) return;
     try {
       const url = new URL(frame.src);
-      if (asOfCb && asOfCb.checked) url.searchParams.set('asOf', 'tomorrow');
+      if (asOfCb && asOfCb.checked) url.searchParams.set('asOf', AS_OF_PARAM);
       else url.searchParams.delete('asOf');
+      if (omitEmptyCb && omitEmptyCb.checked) url.searchParams.set(OMIT_EMPTY_PARAM, '1');
+      else url.searchParams.delete(OMIT_EMPTY_PARAM);
       const next = url.toString();
       if (next !== frame.src) frame.src = next;
     } catch (e) {
       // Fallback: rebuild from relative path
-      const base = '../overview.html' + ((asOfCb && asOfCb.checked) ? '?asOf=tomorrow' : '');
+      const params = [];
+      if (asOfCb && asOfCb.checked) params.push(`asOf=${AS_OF_PARAM}`);
+      if (omitEmptyCb && omitEmptyCb.checked) params.push(`${OMIT_EMPTY_PARAM}=1`);
+      const base = '../overview.html' + (params.length ? `?${params.join('&')}` : '');
       frame.src = base;
     }
   }
@@ -332,9 +365,13 @@ document.addEventListener('DOMContentLoaded', () => {
     slider.addEventListener('input', () => applyBrightness(Number(slider.value || 0)));
   }
   if (asOfCb) {
+    if (shouldAutoSelectNextWeekDay()) asOfCb.checked = true;
     asOfCb.addEventListener('change', updateOverviewAsOf);
     // ensure initial state reflected in frame URL
     updateOverviewAsOf();
+  }
+  if (omitEmptyCb) {
+    omitEmptyCb.addEventListener('change', updateOverviewAsOf);
   }
   chrome.runtime.onMessage.addListener(function(msg){
     if (msg && msg.type === 'STORE_UPDATED') refreshWOs();
