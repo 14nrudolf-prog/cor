@@ -118,10 +118,27 @@
     const wo = ensure(store.wos, id, { id });
     wo.status = details.Status || wo.status || '';
     const arr = Array.isArray(details['Activity log']) ? details['Activity log'] : [];
+    const prevKeys = new Set((wo.activityLog || []).map(it => it._key));
     // ensure stable keys on log rows to track selections
-    wo.activityLog = arr.map(it => ({ ...it, _key: makeLogKey(it) }));
+    const normalized = arr.map(it => ({ ...it, _key: makeLogKey(it) }));
+    const hasNewLogEntry = normalized.some(it => it._key && !prevKeys.has(it._key));
+    wo.activityLog = normalized;
+    if (hasNewLogEntry) {
+      wo.activityLogReviewed = false;
+    }
     wo.lastSeenAt = now();
     await setStore(store);
+  }
+
+  async function markActivityLogReviewed(id, reviewed = true) {
+    id = normalizeId(id);
+    if (!id) return { ok: false, error: 'missing ID' };
+    const store = await getStore();
+    const wo = store.wos[id];
+    if (!wo) return { ok: false, error: 'WO not found' };
+    wo.activityLogReviewed = !!reviewed;
+    await setStore(store);
+    return { ok: true };
   }
 
   function mostRecentDateString(strings) {
@@ -195,6 +212,7 @@
     upsertFromListRows,
     setInactiveForMissing,
     mergeDetails,
+    markActivityLogReviewed,
     changeLastUpdateFromSelection,
     saveLastUpdateEdit
   };

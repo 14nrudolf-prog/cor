@@ -12,6 +12,38 @@ function fmtDate(date) {
 }
 const AS_OF_PARAM = 'nextWeekDay';
 const OMIT_EMPTY_PARAM = 'omitEmpty';
+let lastViewedWoId = null;
+
+function parseDateLoose(s) {
+  const d = new Date(s || '');
+  return isNaN(d) ? null : d;
+}
+
+function getLastUpdateDate(wo) {
+  const cur = wo.lastUpdate && wo.lastUpdate.current;
+  if (!cur) return null;
+  return parseDateLoose(cur.dateOfLastUpdate);
+}
+
+function woHasNewActivitySinceLastUpdate(wo) {
+  const latest = mostRecentLogDate(wo);
+  if (!latest) return false;
+  const lastUpd = getLastUpdateDate(wo);
+  if (!lastUpd) return true;
+  return latest > lastUpd;
+}
+
+function woNeedsReview(wo) {
+  if (wo.activityLogReviewed) return false;
+  const lastUpdate = getLastUpdateDate(wo);
+  const noLastUpdate = !lastUpdate;
+  return noLastUpdate || woHasNewActivitySinceLastUpdate(wo);
+}
+
+function shouldShowOnlyToBeUpdated() {
+  const cb = document.getElementById('cbOnlyToUpdate');
+  return cb ? cb.checked : false;
+}
 
 function fmtDateTimeHM(s) {
   const d = new Date(s);
@@ -70,12 +102,6 @@ function mostRecentLogTime(wo) {
 function computeRowClasses(wo) {
   const cls = [];
   if (wo.inactive) cls.push('row-inactive');
-  const lu = wo.lastUpdate && wo.lastUpdate.current;
-  if (lu && lu.dateOfLastUpdate) {
-    const lastUpd = new Date(lu.dateOfLastUpdate);
-    const latestLog = mostRecentLogDate(wo);
-    if (latestLog && lastUpd && latestLog > lastUpd) cls.push('row-needs-update');
-  }
   return cls.join(' ');
 }
 
@@ -131,8 +157,10 @@ function renderWOsTable(store) {
   const activeCount = all.filter(w => !w.inactive).length;
   const inactiveCount = all.length - activeCount;
   const hideInactive = !!(document.getElementById('cbHideInactive') && document.getElementById('cbHideInactive').checked);
-  const list = all
+  const showOnlyToUpdate = shouldShowOnlyToBeUpdated();
+  const rows = all
     .filter(w => hideInactive ? !w.inactive : true)
+    .filter(w => showOnlyToUpdate ? woNeedsReview(w) : true)
     .sort((a,b) => {
       const timeA = mostRecentLogTime(a);
       const timeB = mostRecentLogTime(b);
@@ -148,9 +176,16 @@ function renderWOsTable(store) {
 
   const countsEl = document.getElementById('woCounts');
   if (countsEl) countsEl.textContent = `Active: ${activeCount}  |  Inactive: ${inactiveCount}`;
-  list.forEach(wo => {
+  rows.forEach(wo => {
     const tr = tbody.insertRow();
-    tr.className = computeRowClasses(wo);
+    const classes = [computeRowClasses(wo)];
+    const needsReview = woNeedsReview(wo);
+    const reviewed = !!wo.activityLogReviewed;
+    const isLastViewed = wo.id === lastViewedWoId;
+    if (isLastViewed) classes.push('row-last-viewed');
+    else if (reviewed) classes.push('row-reviewed');
+    else if (needsReview) classes.push('row-to-review');
+    tr.className = classes.filter(Boolean).join(' ');
     tdText(tr, wo.woNumber || '');
     tdText(tr, wo.dueDate || '');
     tdText(tr, wo.description || '');
@@ -173,6 +208,7 @@ function closeSidebar() {
 }
 
 async function openSidebarActivity(wo) {
+  lastViewedWoId = wo.id;
   openSidebar();
   const host = document.getElementById('sidebarInner');
   host.innerHTML = '';
@@ -183,7 +219,19 @@ async function openSidebarActivity(wo) {
 
   const controls = document.createElement('div'); controls.className='controls';
   const btnApply = document.createElement('button'); btnApply.className='primary'; btnApply.textContent = 'Change last update';
+  const btnReviewed = document.createElement('button');
+  btnReviewed.textContent = wo.activityLogReviewed ? 'Reviewed' : 'Mark reviewed';
+  btnReviewed.disabled = !!wo.activityLogReviewed;
+  btnReviewed.onclick = async (e) => {
+    e.stopPropagation();
+    const resp = await WOStore.markActivityLogReviewed(wo.id, true);
+    if (!resp.ok) { alert(resp.error || 'Failed'); return; }
+    btnReviewed.textContent = 'Reviewed';
+    btnReviewed.disabled = true;
+    renderWOsTable(await loadStore());
+  };
   controls.appendChild(btnApply);
+  controls.appendChild(btnReviewed);
   host.appendChild(controls);
 
   const list = document.createElement('div');
@@ -212,6 +260,7 @@ async function openSidebarActivity(wo) {
     renderWOsTable(store);
     openSidebarLastUpdate(store.wos[wo.id]);
   };
+  renderWOsTable(await loadStore());
 }
 
 async function openSidebarLastUpdate(wo) {
@@ -319,6 +368,16 @@ document.addEventListener('DOMContentLoaded', () => {
     cbHide.addEventListener('change', async () => {
       renderWOsTable(await loadStore());
     });
+  }
+  const cbOnly = document.getElementById('cbOnlyToUpdate');
+  if (cbOnly) {
+    cbOnly.addEventListener('change', async () => {
+      renderWOsTable(await loadStore());
+    });
+  }
+  const sidebarClose = document.getElementById('sidebarClose');
+  if (sidebarClose) {
+    sidebarClose.onclick = (e) => { e.preventDefault(); closeSidebar(); };
   }
 
   // Darkness slider for overview iframe

@@ -21,6 +21,10 @@
       <div class="toolbar">
         <button id="btnScrape" class="primary">Scrape</button>
         <button id="btnRefresh">Refresh</button>
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input id="cbOnlyToUpdate" type="checkbox" checked>
+          <span class="muted">Only show WOs to be updated</span>
+        </label>
         <span id="lastScrape" class="muted"></span>
         <span id="scrapeWarn" class="warn" hidden>Reminder: please scrape – last scrape was yesterday.</span>
         <label style="margin-left:auto;display:flex;align-items:center;gap:6px;">
@@ -29,12 +33,19 @@
         </label>
         <span id="woCounts" class="muted"></span>
       </div>
+      <div class="legend">
+        <span class="legend-item to-review"><span class="legend-chip"></span>To be reviewed (no review or newer log)</span>
+        <span class="legend-item reviewed"><span class="legend-chip"></span>Activity log reviewed</span>
+        <span class="legend-item last-viewed"><span class="legend-chip"></span>Last viewed activity log</span>
+        <span class="legend-item inactive"><span class="legend-chip"></span>Inactive</span>
+      </div>
       <div class="mainarea">
         <div class="tablewrap">
           <table id="wosTable"></table>
         </div>
-        <aside id="sidebar" class="sidebar collapsed">
-          <div class="sidebar-toggle" id="sidebarToggle">❯</div>
+         <aside id="sidebar" class="sidebar collapsed">
+            <button id="sidebarClose" class="sidebar-close" aria-label="Close activity log sidebar">×</button>
+            <div class="sidebar-toggle" id="sidebarToggle">❯</div>
           <div class="sidebar-body">
             <div id="sidebarInner"></div>
           </div>
