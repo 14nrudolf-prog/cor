@@ -248,6 +248,7 @@ async function ensureListContentScript(tabId) {
   return !!(ping2 && ping2.ok);
 }
 
+const LIST_PAGE_URL_FRAGMENT = '/corpnet/workorder/workorderlist.aspx';
 const SCRAPE_PREP_ALERT = 'make sure you are logged into corrigo and the daily overview list selected on the top right. After you checked these 2 things, click scrape again.';
 
 async function alertScrapePrep(tabId) {
@@ -262,16 +263,79 @@ async function alertScrapePrep(tabId) {
   }
 }
 
+async function waitForListPage(tabId, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const tab = await tabsGet(tabId);
+    if (!tab) return false;
+    const url = (tab.url || '').toLowerCase();
+    if (url.includes(LIST_PAGE_URL_FRAGMENT)) return true;
+    await sleep(300);
+  }
+  const tab = await tabsGet(tabId);
+  if (!tab) return false;
+  return (tab.url || '').toLowerCase().includes(LIST_PAGE_URL_FRAGMENT);
+}
+
+async function readDailyOverviewLabel(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const header = document.querySelector('.master-page-header');
+        if (!header || !header.children || header.children.length < 2) return null;
+        let el = header.children[1];
+        const path = [0, 0, 0, 0];
+        for (let idx = 0; idx < path.length && el; idx++) {
+          const children = el.children;
+          if (!children || children.length <= path[idx]) {
+            el = null;
+            break;
+          }
+          el = children[path[idx]];
+        }
+        if (!el) return null;
+        const text = (el.innerText || '').trim();
+        return text || null;
+      }
+    });
+    if (!results || !results.length) return null;
+    return results[0].result || null;
+  } catch (e) {
+    console.warn('[SW] readDailyOverviewLabel failed', e);
+    return null;
+  }
+}
+
+async function waitForDailyOverviewLabel(tabId, timeoutMs = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const label = await readDailyOverviewLabel(tabId);
+    if (label != null) {
+      return label === 'Daily Overview';
+    }
+    await sleep(300);
+  }
+  return false;
+}
+
 async function ensureDailyOverview(tabId) {
+  const listReady = await waitForListPage(tabId);
+  if (!listReady) {
+    await alertScrapePrep(tabId);
+    return false;
+  }
+  const dailyOk = await waitForDailyOverviewLabel(tabId);
+  if (!dailyOk) {
+    await alertScrapePrep(tabId);
+    return false;
+  }
   const ready = await ensureListContentScript(tabId);
   if (!ready) {
     await alertScrapePrep(tabId);
     return false;
   }
-  const resp = await sendToTab(tabId, { type: 'CHECK_DAILY_OVERVIEW' });
-  if (resp && resp.ok) return true;
-  await alertScrapePrep(tabId);
-  return false;
+  return true;
 }
 
 function executeScriptFiles(tabId, files) {

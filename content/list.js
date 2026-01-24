@@ -54,12 +54,6 @@ if (!window.__CORRIGO_LIST_LISTENER_ADDED) {
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'PING') { sendResponse({ ok: true }); return; }
 
-  if (msg.type === 'CHECK_DAILY_OVERVIEW') {
-    const name = getListViewName();
-    sendResponse({ ok: name === 'Daily Overview', current: name });
-    return;
-  }
-
   if (msg.type === 'GET_LIST_DATA') {
     const listData = readListData();
     console.log('[list.js] LIST_DATA count=', listData.length);
