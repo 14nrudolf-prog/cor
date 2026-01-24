@@ -11,7 +11,54 @@ function fmtDate(date) {
   return `${y}-${m}-${dd}`;
 }
 const AS_OF_PARAM = 'nextWeekDay';
+const HIGHLIGHT_ACTIONS = new Set(['note', 'message received', 'started', 'picked up']);
+const AUTHOR_COLOR_VARIANTS = [
+  'hsl(0, 100%, 85%)',     // red light
+  'hsl(210, 100%, 85%)',   // blue light
+  'hsl(30, 100%, 85%)',    // orange light
+  'hsl(280, 80%, 85%)',    // purple light
+  'hsl(60, 100%, 90%)',    // yellow light
+  'hsl(0, 100%, 40%)',     // red dark
+  'hsl(210, 90%, 45%)',    // blue dark
+  'hsl(30, 100%, 45%)',    // orange dark
+  'hsl(280, 80%, 45%)',    // purple dark
+  'hsl(60, 100%, 60%)'     // yellow dark
+];
 let lastViewedWoId = null;
+let authorColorState = null;
+
+async function ensureAuthorColorState() {
+  if (authorColorState) return;
+  const data = await chrome.storage.local.get('activityAuthorColorState');
+  authorColorState = data.activityAuthorColorState || { map: {}, nextIndex: 0 };
+}
+
+function persistAuthorColorState() {
+  if (!authorColorState) return;
+  chrome.storage.local.set({ activityAuthorColorState: authorColorState });
+}
+
+function getUpdatedAuthorColor(author) {
+  if (!author) return null;
+  if (!authorColorState) return null;
+  let info = authorColorState.map[author];
+  if (!info) {
+    const idx = authorColorState.nextIndex % AUTHOR_COLOR_VARIANTS.length;
+    info = { color: AUTHOR_COLOR_VARIANTS[idx] };
+    authorColorState.map[author] = info;
+    authorColorState.nextIndex = (authorColorState.nextIndex + 1) % AUTHOR_COLOR_VARIANTS.length;
+    persistAuthorColorState();
+  }
+  return info.color;
+}
+
+function getContrastTextColor(color) {
+  if (!color) return '#000';
+  const m = color.match(/hsl\\(\\s*(\\d+),\\s*([\\d.]+)%,\\s*([\\d.]+)%\\s*\\)/i);
+  if (!m) return '#fff';
+  const lightness = Number(m[3]);
+  return lightness < 55 ? '#fff' : '#000';
+}
 
 function parseDateLoose(s) {
   const d = new Date(s || '');
@@ -104,8 +151,6 @@ function computeRowClasses(wo) {
   return cls.join(' ');
 }
 
-const HIGHLIGHT_ACTIONS = new Set(['note', 'message received', 'started']);
-
 function buildActivitySummary(wo) {
   const arr = wo.activityLog || [];
   const take = arr.slice(0, 3);
@@ -138,22 +183,31 @@ function tdLink(tr, text, href, cls) {
   anchor.target = '_blank';
   anchor.rel = 'noopener';
   anchor.textContent = (text != null ? text : '');
-  anchor.style.cssText = 'color:#06c;text-decoration:none;';
+  anchor.className = 'wo-link';
   td.appendChild(anchor);
   return td;
 }
 
-function tdPeek(tr, text, onOpen) {
+function tdClickable(tr, text, onOpen) {
   const td = tr.insertCell();
-  td.className = 'cell-with-button';
+  td.className = 'cell-clickable';
+  td.tabIndex = 0;
+  td.setAttribute('role', 'button');
   const div = document.createElement('div');
   div.className = 'cell-ellipsis';
   div.textContent = (text != null ? text : '');
-  const btn = document.createElement('button');
-  btn.className = 'peek-btn';
-  btn.textContent = 'view';
-  btn.onclick = (e) => { e.stopPropagation(); onOpen(); };
-  td.appendChild(div); td.appendChild(btn);
+  const handler = (e) => {
+    e.stopPropagation();
+    onOpen();
+  };
+  td.addEventListener('click', handler);
+  td.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handler(e);
+    }
+  });
+  td.appendChild(div);
   return td;
 }
 
@@ -207,8 +261,8 @@ function renderWOsTable(store) {
     }
     tdText(tr, wo.dueDate || '');
     tdText(tr, wo.description || '');
-    tdPeek(tr, buildActivitySummary(wo), () => openSidebarActivity(wo));
-    tdPeek(tr, buildLastUpdateSummary(wo), () => openSidebarLastUpdate(wo));
+    tdClickable(tr, buildActivitySummary(wo), () => openSidebarActivity(wo));
+    tdClickable(tr, buildLastUpdateSummary(wo), () => openSidebarLastUpdate(wo));
     const changed = wo.lastUpdate && wo.lastUpdate.current && wo.lastUpdate.current.changedAt;
     tdText(tr, changed ? fmtDateTimeHM(new Date(changed)) : '');
   });
@@ -230,6 +284,7 @@ async function openSidebarActivity(wo) {
   openSidebar();
   const host = document.getElementById('sidebarInner');
   host.innerHTML = '';
+  await ensureAuthorColorState();
 
   const h = document.createElement('div');
   h.className = 'section-h'; h.textContent = `Activity log — WO ${wo.woNumber}`;
@@ -257,11 +312,28 @@ async function openSidebarActivity(wo) {
   (wo.activityLog || []).forEach((it, idx) => {
     const card = document.createElement('div'); card.className = 'log-item';
     const normalizedAction = (it.ActionTitle || '').trim().toLowerCase();
-    if (HIGHLIGHT_ACTIONS.has(normalizedAction)) card.classList.add('log-item-highlighted');
+    const hasComment = ((it.Comment || '').trim().length > 0);
+    const isHighlightedAction = hasComment && HIGHLIGHT_ACTIONS.has(normalizedAction);
+    if (isHighlightedAction) card.classList.add('log-item-highlighted');
     const head = document.createElement('div'); head.className='log-head';
     const left = document.createElement('div');
     const title = document.createElement('div'); title.className='log-title'; title.textContent = it.ActionTitle || '';
-    const meta = document.createElement('div'); meta.className='log-meta'; meta.textContent = `${fmtDateTimeHM(it.ActionDateTime || '')} — ${it.ActionBy || ''}`;
+    const meta = document.createElement('div'); meta.className='log-meta muted';
+    const dateSpan = document.createElement('span'); dateSpan.className='log-meta-date';
+    dateSpan.textContent = fmtDateTimeHM(it.ActionDateTime || '');
+    if (isHighlightedAction) dateSpan.classList.add('log-meta-date-highlighted');
+    meta.appendChild(dateSpan);
+    const authorName = (it.ActionBy || '').trim();
+    if (authorName) {
+      const authorChip = document.createElement('span'); authorChip.className='author-chip';
+      const color = getUpdatedAuthorColor(authorName);
+      if (color) {
+        authorChip.style.backgroundColor = color;
+        authorChip.style.color = getContrastTextColor(color);
+      }
+      authorChip.textContent = authorName;
+      meta.appendChild(authorChip);
+    }
     left.appendChild(title); left.appendChild(meta);
     const right = document.createElement('div');
     const cb = document.createElement('input'); cb.type='checkbox'; cb.dataset.key = it._key || String(idx);
@@ -271,25 +343,25 @@ async function openSidebarActivity(wo) {
     card.appendChild(head); card.appendChild(body);
     list.appendChild(card);
     requestAnimationFrame(() => {
-      if (body.scrollHeight > 100) {
-        body.classList.add('log-text-truncated');
-        const btnBottom = document.createElement('button');
-        btnBottom.type = 'button';
-        btnBottom.className = 'view-toggle view-toggle-bottom';
-        btnBottom.textContent = 'view more';
-        const btnTop = document.createElement('button');
-        btnTop.type = 'button';
-        btnTop.className = 'view-toggle view-toggle-top';
-        btnTop.textContent = 'view less';
-        const setExpanded = (value) => {
-          card.classList.toggle('expanded', value);
-          btnBottom.textContent = value ? 'view less' : 'view more';
-        };
-        btnBottom.addEventListener('click', () => setExpanded(!card.classList.contains('expanded')));
-        btnTop.addEventListener('click', () => setExpanded(false));
-        card.appendChild(btnBottom);
-        card.appendChild(btnTop);
-      }
+      const qualifiesForToggle = card.scrollHeight > 300;
+      if (!qualifiesForToggle) return;
+      body.classList.add('log-text-truncated');
+      const btnBottom = document.createElement('button');
+      btnBottom.type = 'button';
+      btnBottom.className = 'view-toggle view-toggle-bottom';
+      btnBottom.textContent = 'view more';
+      const btnTop = document.createElement('button');
+      btnTop.type = 'button';
+      btnTop.className = 'view-toggle view-toggle-top';
+      btnTop.textContent = 'view less';
+      const setExpanded = (value) => {
+        card.classList.toggle('expanded', value);
+        btnBottom.textContent = value ? 'view less' : 'view more';
+      };
+      btnBottom.addEventListener('click', () => setExpanded(!card.classList.contains('expanded')));
+      btnTop.addEventListener('click', () => setExpanded(false));
+      card.appendChild(btnBottom);
+      card.appendChild(btnTop);
     });
   });
   if (wo.activityLogTruncated) {
@@ -391,6 +463,7 @@ async function openSidebarLastUpdate(wo) {
 async function refreshWOs() {
   const store = await loadStore();
   await refreshHeader();
+  await ensureAuthorColorState();
   renderWOsTable(store);
 }
 
