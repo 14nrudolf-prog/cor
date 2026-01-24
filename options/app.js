@@ -58,7 +58,7 @@ function getContrastTextColor(color) {
   const m = normalized.match(/hsl\\((\\d+),(\\d+)%,(\\d+)%\\)/i);
   if (!m) return '#fff';
   const lightness = Number(m[3]);
-  return lightness > 60 ? '#000' : '#fff';
+  return lightness >= 50 ? '#000' : '#fff';
 }
 
 function parseDateLoose(s) {

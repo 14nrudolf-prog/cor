@@ -43,8 +43,6 @@ const CORRIGO_ALERT_TEXT = 'there is currently an issue with corrigo, try scrapi
 let scrapeErrorRetries = 0;
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
-
-  
   console.log('[SW] got message:', msg, 'from', sender);
 
   switch (msg.type) {
@@ -164,6 +162,7 @@ function openNextDetailsBatch() {
   if (!queue.length) return;
   if (currentUpdate.activeBatchIds && currentUpdate.activeBatchIds.size > 0) return; // still processing
 
+  console.log('[SW] openNextDetailsBatch', { remaining: queue.length, batchSize: currentUpdate.batchSize });
   const batchSize = currentUpdate.batchSize || MAX_DETAIL_TABS_PER_BATCH;
   const batch = queue.splice(0, batchSize);
   currentUpdate.activeBatchIds = new Set(batch);
@@ -178,6 +177,7 @@ function openNextDetailsBatch() {
       }
     });
   });
+  console.log('[SW] batch opened', batch);
   console.log(`[SW] opened details batch of ${batch.length}; ${queue.length} remaining`);
 }
 
@@ -215,7 +215,11 @@ async function handleDetailsData(details, tabId) {
 
   // keep the tab open in debug mode
   if (tabId && currentUpdate && currentUpdate.detailTabIds) currentUpdate.detailTabIds.delete(tabId);
-  if (!DEBUG_DETAILS && tabId) chrome.tabs.remove(tabId);
+  if (tabId && currentUpdate && currentUpdate.detailTabIds) currentUpdate.detailTabIds.delete(tabId);
+  if (!DEBUG_DETAILS && tabId) {
+    console.log('[SW] closing detail tab', tabId);
+    chrome.tabs.remove(tabId);
+  }
 
   // in debug mode: do not finish automatically
   if (!DEBUG_DETAILS && currentUpdate.remainingIds.size === 0) {
@@ -279,6 +283,7 @@ async function alertScrapePrep(tabId) {
 
 async function waitForListPage(tabId, timeoutMs = 8000) {
   const start = Date.now();
+  console.log('[SW] waitForListPage start', { tabId, timeoutMs });
   while (Date.now() - start < timeoutMs) {
     const tab = await tabsGet(tabId);
     if (!tab) return false;
@@ -288,7 +293,9 @@ async function waitForListPage(tabId, timeoutMs = 8000) {
   }
   const tab = await tabsGet(tabId);
   if (!tab) return false;
-  return (tab.url || '').toLowerCase().includes(LIST_PAGE_URL_FRAGMENT);
+  const ok = (tab.url || '').toLowerCase().includes(LIST_PAGE_URL_FRAGMENT);
+  console.log('[SW] waitForListPage final', { tabId, url: tab.url, ok });
+  return ok;
 }
 
 async function readDailyOverviewLabel(tabId) {
@@ -334,6 +341,7 @@ async function waitForDailyOverviewLabel(tabId, timeoutMs = 10000) {
 }
 
 async function ensureDailyOverview(tabId) {
+  console.log('[SW] ensureDailyOverview start', tabId);
   const listReady = await waitForListPage(tabId);
   if (!listReady) {
     await alertScrapePrep(tabId);
@@ -349,10 +357,12 @@ async function ensureDailyOverview(tabId) {
     await alertScrapePrep(tabId);
     return false;
   }
+  console.log('[SW] ensureDailyOverview ready');
   return true;
 }
 
 async function closeAllDetailTabs() {
+  console.log('[SW] closeAllDetailTabs');
   if (!currentUpdate || !currentUpdate.detailTabIds) return;
   const ids = Array.from(currentUpdate.detailTabIds);
   currentUpdate.detailTabIds.clear();
@@ -364,6 +374,7 @@ async function closeAllDetailTabs() {
 }
 
 async function closeCorrigoTabs() {
+  console.log('[SW] closeCorrigoTabs');
   try {
     const tabs = await tabsQuery({ url: ['*://jll-oracle.corrigo.com/*'] });
     const ids = tabs.filter(t => t && t.id != null).map(t => t.id);
@@ -394,6 +405,7 @@ function restartScrapeAfterError() {
 
 async function handleDetailsPageError(tabId) {
   console.warn('[SW] DETAILS_ERROR reported from tab', tabId);
+  console.log('[SW] handleDetailsPageError state', { scrapeErrorRetries, currentUpdateListId: currentUpdate && currentUpdate.listTabId });
   if (!currentUpdate) return;
   await closeAllDetailTabs();
   const listTabId = currentUpdate.listTabId;
@@ -458,6 +470,7 @@ async function scrapeToStore() {
 }
 
 async function finishScrapeToStore() {
+  console.log('[SW] finishScrapeToStore start');
   scrapeErrorRetries = 0;
   // Merge list+details into wo_store
   const listRows = Object.values(currentUpdate.listMap || {});
@@ -490,6 +503,7 @@ async function finishScrapeToStore() {
  * 3) CSV-&-download
  */
 async function finishUpdate() {
+  console.log('[SW] finishUpdate start');
   scrapeErrorRetries = 0;
   const timestamp = Date.now();
   const snapKey   = `snapshot_${timestamp}`;

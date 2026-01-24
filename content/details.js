@@ -164,7 +164,9 @@ function readProceduresProgress() {
 // ----- POLL UNTIL READY -----
 function isErrorPage() {
   const error = document.querySelector('.center-container h1');
-  return error && error.textContent && error.textContent.trim() === 'An Unexpected Error Has Occurred';
+  const text = error && error.textContent ? error.textContent.trim() : '';
+  console.log('[details-error] checking h1 text:', text);
+  return text === 'An Unexpected Error Has Occurred';
 }
 
 let errorNotified = false;
@@ -172,6 +174,7 @@ let errorNotified = false;
 function notifyDetailsError() {
   if (errorNotified) return;
   errorNotified = true;
+  console.warn('[details-error] notifying service worker', { ID: getIdFromUrl() });
   chrome.runtime.sendMessage({ type: 'DETAILS_ERROR', ID: getIdFromUrl() });
 }
 
