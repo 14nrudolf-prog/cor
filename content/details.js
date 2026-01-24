@@ -37,7 +37,7 @@ function isPagerFullyExpanded(txt) {
 
 // ---- config (tweak while testing) ----
 const INTERVAL_MS = 300;     // poll every 300 ms
-const MAX_WAIT_MS = 36000000;   // give it up to 20s to populate
+const MAX_WAIT_MS = 0;       // 0 = wait forever (give users as much time as needed)
 
 window.addEventListener('load', () => {
   waitAndExtract();
@@ -194,7 +194,7 @@ console.log(
       };
       console.log('[details] ✅ extracted (final):', payload);
       chrome.runtime.sendMessage({ type: 'DETAILS_DATA', data: payload });
-    } else if (Date.now() - start > MAX_WAIT_MS) {
+    } else if (MAX_WAIT_MS > 0 && Date.now() - start > MAX_WAIT_MS) {
       clearInterval(timer);
       const payload = {
         ID,

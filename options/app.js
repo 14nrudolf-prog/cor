@@ -11,7 +11,6 @@ function fmtDate(date) {
   return `${y}-${m}-${dd}`;
 }
 const AS_OF_PARAM = 'nextWeekDay';
-const OMIT_EMPTY_PARAM = 'omitEmpty';
 let lastViewedWoId = null;
 
 function parseDateLoose(s) {
@@ -229,6 +228,7 @@ async function openSidebarActivity(wo) {
     btnReviewed.textContent = 'Reviewed';
     btnReviewed.disabled = true;
     renderWOsTable(await loadStore());
+    closeSidebar();
   };
   controls.appendChild(btnApply);
   controls.appendChild(btnReviewed);
@@ -393,22 +393,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const slider = document.getElementById('darknessSlider');
   const valEl = document.getElementById('darknessValue');
   const asOfCb = document.getElementById('cbAsOfNextWeekDay');
-  const omitEmptyCb = document.getElementById('cbOmitEmpty');
   function updateOverviewAsOf() {
     if (!frame) return;
     try {
       const url = new URL(frame.src);
       if (asOfCb && asOfCb.checked) url.searchParams.set('asOf', AS_OF_PARAM);
       else url.searchParams.delete('asOf');
-      if (omitEmptyCb && omitEmptyCb.checked) url.searchParams.set(OMIT_EMPTY_PARAM, '1');
-      else url.searchParams.delete(OMIT_EMPTY_PARAM);
       const next = url.toString();
       if (next !== frame.src) frame.src = next;
     } catch (e) {
       // Fallback: rebuild from relative path
       const params = [];
       if (asOfCb && asOfCb.checked) params.push(`asOf=${AS_OF_PARAM}`);
-      if (omitEmptyCb && omitEmptyCb.checked) params.push(`${OMIT_EMPTY_PARAM}=1`);
       const base = '../overview.html' + (params.length ? `?${params.join('&')}` : '');
       frame.src = base;
     }
@@ -428,9 +424,6 @@ document.addEventListener('DOMContentLoaded', () => {
     asOfCb.addEventListener('change', updateOverviewAsOf);
     // ensure initial state reflected in frame URL
     updateOverviewAsOf();
-  }
-  if (omitEmptyCb) {
-    omitEmptyCb.addEventListener('change', updateOverviewAsOf);
   }
   chrome.runtime.onMessage.addListener(function(msg){
     if (msg && msg.type === 'STORE_UPDATED') refreshWOs();
