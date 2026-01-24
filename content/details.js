@@ -119,7 +119,8 @@ function readActivityLog() {
 // ----- PROCEDURES PROGRESS (Steps “X of Y” -> “X/Y”) -----
 function readProceduresProgress() {
   const table = document.querySelector('[data-role="woproceduregrid"] table');
-  if (!table) return { value: '', loaded: false };
+  // Treat missing procedures grid as "nothing to load" so we don't block indefinitely.
+  if (!table) return { value: '', loaded: true };
 
   const thead = table.querySelector('thead');
   const tb = table.querySelector('tbody');
@@ -163,6 +164,8 @@ function waitAndExtract() {
   const ID = getIdFromUrl();
   const start = Date.now();
   let attempts = 0;
+  let lastRowCount = 0;
+  let lastRowChangeMs = start;
 
   const timer = setInterval(() => {
     attempts++;
@@ -182,9 +185,16 @@ console.log(
   }
 );
 
-    const allLoaded = status.loaded && act.loaded && proc.loaded;
+    if (act.rows.length !== lastRowCount) {
+      lastRowCount = act.rows.length;
+      lastRowChangeMs = Date.now();
+    }
 
-    if (allLoaded) {
+    const rowsStableForMs = Date.now() - lastRowChangeMs;
+    const allLoaded = status.loaded && act.loaded && proc.loaded;
+    const stableEnough = status.loaded && proc.loaded && act.rows.length > 0 && rowsStableForMs > 1500;
+
+    if (allLoaded || stableEnough) {
       clearInterval(timer);
       const payload = {
         ID,
