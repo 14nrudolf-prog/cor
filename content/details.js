@@ -40,23 +40,7 @@ const INTERVAL_MS = 300;     // poll every 300 ms
 const MAX_WAIT_MS = 0;       // 0 = wait forever (give users as much time as needed)
 
 window.addEventListener('load', () => {
-  // Inject a test error banner only on the first details page across the session to validate detection
-  try {
-    const alreadyInjected = localStorage.getItem('__cor_error_test_injected') === '1';
-    if (!alreadyInjected) {
-      localStorage.setItem('__cor_error_test_injected', '1');
-      console.log('[details-error] injecting test error banner for detection (first detail tab only)');
-      const div = document.createElement('div');
-      div.className = 'center-container';
-      const h1 = document.createElement('h1');
-      h1.textContent = 'An Unexpected Error Has Occurred';
-      div.appendChild(h1);
-      document.body.insertBefore(div, document.body.firstChild || null);
-    }
-  } catch (e) {
-    console.warn('[details-error] failed to set test injection flag', e);
-  }
-  if (!maybeNotifyError(true)) {
+  if (!maybeNotifyError(false)) {
     waitAndExtract();
   }
 });
