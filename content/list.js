@@ -60,14 +60,6 @@ if (!window.__CORRIGO_LIST_LISTENER_ADDED) {
     return;
   }
 
-  if (msg.type === 'CHECK_AND_ALERT_DAILY_OVERVIEW') {
-    const name = getListViewName();
-    const ok = name === 'Daily Overview';
-    if (!ok) alert('Please select the "Daily Overview" list view before scraping.');
-    sendResponse({ ok, current: name });
-    return;
-  }
-
   if (msg.type === 'GET_LIST_DATA') {
     const listData = readListData();
     console.log('[list.js] LIST_DATA count=', listData.length);

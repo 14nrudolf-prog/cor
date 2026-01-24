@@ -248,31 +248,29 @@ async function ensureListContentScript(tabId) {
   return !!(ping2 && ping2.ok);
 }
 
-async function waitForDailyOverview(tabId, timeoutMs = 300000) { // up to 5 minutes to allow login + nav
-  const start = Date.now();
-  let alerted = false;
-  while (Date.now() - start < timeoutMs) {
-    const t = await tabsGet(tabId);
-    if (!t) return false;
-    const url = (t.url || '').toLowerCase();
-    const isList = url.includes('/corpnet/workorder/workorderlist.aspx');
-    const isLogin = url.includes('/corpnet/login.aspx');
+const SCRAPE_PREP_ALERT = 'make sure you are logged into corrigo and the daily overview list selected on the top right. After you checked these 2 things, click scrape again.';
 
-    if (isList) {
-      const ready = await ensureListContentScript(tabId);
-      if (!ready) { await sleep(1000); continue; }
-      // First time on list page and wrong view: alert once and continue
-      if (!alerted) {
-        const resp0 = await sendToTab(tabId, { type: 'CHECK_AND_ALERT_DAILY_OVERVIEW' });
-        if (resp0 && resp0.ok) return true;
-        alerted = true;
-      }
-      const resp = await sendToTab(tabId, { type: 'CHECK_DAILY_OVERVIEW' });
-      if (resp && resp.ok) return true;
-    }
-    // If login or elsewhere, just keep waiting
-    await sleep(1000);
+async function alertScrapePrep(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (message) => alert(message),
+      args: [SCRAPE_PREP_ALERT]
+    });
+  } catch (e) {
+    console.warn('[SW] alertScrapePrep failed', e);
   }
+}
+
+async function ensureDailyOverview(tabId) {
+  const ready = await ensureListContentScript(tabId);
+  if (!ready) {
+    await alertScrapePrep(tabId);
+    return false;
+  }
+  const resp = await sendToTab(tabId, { type: 'CHECK_DAILY_OVERVIEW' });
+  if (resp && resp.ok) return true;
+  await alertScrapePrep(tabId);
   return false;
 }
 
@@ -296,10 +294,10 @@ async function scrapeToStore() {
   const listTabId = await openOrFocusListTab();
   if (listTabId == null) return;
 
-  // robustly wait across login/navigation until Daily Overview is selected
-  const okView = await waitForDailyOverview(listTabId);
+  const okView = await ensureDailyOverview(listTabId);
   if (!okView) {
-    console.warn('[SW] Daily Overview not selected within timeout');
+    console.warn('[SW] Daily Overview not selected');
+    currentUpdate = null;
     return;
   }
 
