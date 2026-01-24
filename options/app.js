@@ -54,11 +54,10 @@ function getUpdatedAuthorColor(author) {
 
 function getContrastTextColor(color) {
   if (!color) return '#000';
-  const normalized = color.replace(/\\s+/g, '');
-  const m = normalized.match(/hsl\\((\\d+),(\\d+)%,(\\d+)%\\)/i);
-  if (!m) return '#fff';
+  const m = color.match(/hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)/i);
+  if (!m) return '#000';
   const lightness = Number(m[3]);
-  return lightness >= 50 ? '#000' : '#fff';
+  return lightness >= 55 ? '#000' : '#fff';
 }
 
 function parseDateLoose(s) {

@@ -40,7 +40,18 @@ const INTERVAL_MS = 300;     // poll every 300 ms
 const MAX_WAIT_MS = 0;       // 0 = wait forever (give users as much time as needed)
 
 window.addEventListener('load', () => {
-  if (!maybeNotifyError()) {
+  // Inject a test error banner only on the first details page to validate detection
+  if (!window.__errorTestInjected) {
+    window.__errorTestInjected = true;
+    console.log('[details-error] injecting test error banner for detection');
+    const div = document.createElement('div');
+    div.className = 'center-container';
+    const h1 = document.createElement('h1');
+    h1.textContent = 'An Unexpected Error Has Occurred';
+    div.appendChild(h1);
+    document.body.insertBefore(div, document.body.firstChild || null);
+  }
+  if (!maybeNotifyError(true)) {
     waitAndExtract();
   }
 });
@@ -171,17 +182,18 @@ function isErrorPage() {
 
 let errorNotified = false;
 
-function notifyDetailsError() {
+function notifyDetailsError(testMode) {
   if (errorNotified) return;
   errorNotified = true;
-  console.warn('[details-error] notifying service worker', { ID: getIdFromUrl() });
-  chrome.runtime.sendMessage({ type: 'DETAILS_ERROR', ID: getIdFromUrl() });
+  const payload = { type: 'DETAILS_ERROR', ID: getIdFromUrl(), test: !!testMode };
+  console.warn('[details-error] notifying service worker', payload);
+  chrome.runtime.sendMessage(payload);
 }
 
-function maybeNotifyError() {
+function maybeNotifyError(testMode) {
   if (errorNotified) return false;
   if (isErrorPage()) {
-    notifyDetailsError();
+    notifyDetailsError(testMode);
     return true;
   }
   return false;

@@ -73,7 +73,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     }
 
     case 'DETAILS_ERROR': {
-      return handleDetailsPageError(sender.tab && sender.tab.id);
+      return handleDetailsPageError(sender.tab && sender.tab.id, msg && msg.test);
     }
 
     case 'GENERATE_OVERVIEW': {
@@ -403,9 +403,13 @@ function restartScrapeAfterError() {
   }, 1500);
 }
 
-async function handleDetailsPageError(tabId) {
-  console.warn('[SW] DETAILS_ERROR reported from tab', tabId);
+async function handleDetailsPageError(tabId, testMode) {
+  console.warn('[SW] DETAILS_ERROR reported from tab', tabId, 'testMode=', testMode);
   console.log('[SW] handleDetailsPageError state', { scrapeErrorRetries, currentUpdateListId: currentUpdate && currentUpdate.listTabId });
+  if (testMode) {
+    console.log('[SW] test mode error detected; leaving tabs open for inspection');
+    return;
+  }
   if (!currentUpdate) return;
   await closeAllDetailTabs();
   const listTabId = currentUpdate.listTabId;
