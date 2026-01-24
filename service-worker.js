@@ -186,7 +186,8 @@ async function handleDetailsData(details, tabId) {
     Object.assign(currentUpdate.listMap[ID], {
       Status: details.Status,
       'Activity log': details['Activity log'],
-      'Procedures progress': details['Procedures progress']
+      'Procedures progress': details['Procedures progress'],
+      activityLogTruncated: details.activityLogTruncated
     });
   } else {
     currentUpdate.inactiveStatus = currentUpdate.inactiveStatus || {};

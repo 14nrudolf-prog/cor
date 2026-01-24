@@ -166,6 +166,7 @@ function waitAndExtract() {
   let attempts = 0;
   let lastRowCount = 0;
   let lastRowChangeMs = start;
+  let activityLogTruncated = false;
 
   const timer = setInterval(() => {
     attempts++;
@@ -190,6 +191,10 @@ console.log(
       lastRowChangeMs = Date.now();
     }
 
+    if (act.fullyExpanded === false) {
+      activityLogTruncated = true;
+    }
+
     const rowsStableForMs = Date.now() - lastRowChangeMs;
     const allLoaded = status.loaded && act.loaded && proc.loaded;
     const stableEnough = status.loaded && proc.loaded && act.rows.length > 0 && rowsStableForMs > 1500;
@@ -200,7 +205,8 @@ console.log(
         ID,
         Status: status.value,
         'Activity log': act.rows,
-        'Procedures progress': proc.value
+        'Procedures progress': proc.value,
+        activityLogTruncated
       };
       console.log('[details] ✅ extracted (final):', payload);
       chrome.runtime.sendMessage({ type: 'DETAILS_DATA', data: payload });

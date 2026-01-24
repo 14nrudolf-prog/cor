@@ -117,6 +117,9 @@
     const store = await getStore();
     const wo = ensure(store.wos, id, { id });
     wo.status = details.Status || wo.status || '';
+    if (typeof details.activityLogTruncated === 'boolean') {
+      wo.activityLogTruncated = details.activityLogTruncated;
+    }
     const arr = Array.isArray(details['Activity log']) ? details['Activity log'] : [];
     const prevKeys = new Set((wo.activityLog || []).map(it => it._key));
     // ensure stable keys on log rows to track selections

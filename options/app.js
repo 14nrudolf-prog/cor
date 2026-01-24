@@ -104,6 +104,8 @@ function computeRowClasses(wo) {
   return cls.join(' ');
 }
 
+const HIGHLIGHT_ACTIONS = new Set(['note', 'message received', 'started']);
+
 function buildActivitySummary(wo) {
   const arr = wo.activityLog || [];
   const take = arr.slice(0, 3);
@@ -125,6 +127,19 @@ function tdText(tr, text, cls) {
   const td = tr.insertCell();
   td.textContent = (text != null ? text : '');
   if (cls) td.className = cls;
+  return td;
+}
+
+function tdLink(tr, text, href, cls) {
+  const td = tr.insertCell();
+  if (cls) td.className = cls;
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener';
+  anchor.textContent = (text != null ? text : '');
+  anchor.style.cssText = 'color:#06c;text-decoration:none;';
+  td.appendChild(anchor);
   return td;
 }
 
@@ -185,7 +200,11 @@ function renderWOsTable(store) {
     else if (reviewed) classes.push('row-reviewed');
     else if (needsReview) classes.push('row-to-review');
     tr.className = classes.filter(Boolean).join(' ');
-    tdText(tr, wo.woNumber || '');
+    if (wo.id) {
+      tdLink(tr, wo.woNumber || '', `https://jll-oracle.corrigo.com/corpnet/workorder/workorderdetails.aspx/${wo.id}`);
+    } else {
+      tdText(tr, wo.woNumber || '');
+    }
     tdText(tr, wo.dueDate || '');
     tdText(tr, wo.description || '');
     tdPeek(tr, buildActivitySummary(wo), () => openSidebarActivity(wo));
@@ -237,6 +256,8 @@ async function openSidebarActivity(wo) {
   const list = document.createElement('div');
   (wo.activityLog || []).forEach((it, idx) => {
     const card = document.createElement('div'); card.className = 'log-item';
+    const normalizedAction = (it.ActionTitle || '').trim().toLowerCase();
+    if (HIGHLIGHT_ACTIONS.has(normalizedAction)) card.classList.add('log-item-highlighted');
     const head = document.createElement('div'); head.className='log-head';
     const left = document.createElement('div');
     const title = document.createElement('div'); title.className='log-title'; title.textContent = it.ActionTitle || '';
@@ -249,16 +270,52 @@ async function openSidebarActivity(wo) {
     const body = document.createElement('div'); body.className='log-text'; body.textContent = it.Comment || '';
     card.appendChild(head); card.appendChild(body);
     list.appendChild(card);
+    requestAnimationFrame(() => {
+      if (body.scrollHeight > 100) {
+        body.classList.add('log-text-truncated');
+        const btnBottom = document.createElement('button');
+        btnBottom.type = 'button';
+        btnBottom.className = 'view-toggle view-toggle-bottom';
+        btnBottom.textContent = 'view more';
+        const btnTop = document.createElement('button');
+        btnTop.type = 'button';
+        btnTop.className = 'view-toggle view-toggle-top';
+        btnTop.textContent = 'view less';
+        const setExpanded = (value) => {
+          card.classList.toggle('expanded', value);
+          btnBottom.textContent = value ? 'view less' : 'view more';
+        };
+        btnBottom.addEventListener('click', () => setExpanded(!card.classList.contains('expanded')));
+        btnTop.addEventListener('click', () => setExpanded(false));
+        card.appendChild(btnBottom);
+        card.appendChild(btnTop);
+      }
+    });
   });
+  if (wo.activityLogTruncated) {
+    const card = document.createElement('div'); card.className = 'log-item';
+    const head = document.createElement('div'); head.className='log-head';
+    const title = document.createElement('div'); title.className='log-title'; title.textContent = 'More activity log entries available';
+    head.appendChild(title);
+    const body = document.createElement('div'); body.className='log-text';
+    const link = document.createElement('a');
+    link.href = `https://jll-oracle.corrigo.com/corpnet/workorder/workorderdetails.aspx/${wo.id}`;
+    link.target = '_blank'; link.rel = 'noopener';
+    link.textContent = 'these are only the most recent activity log entries, click here to visit the WO page and see the complete activity log';
+    body.appendChild(link);
+    card.appendChild(head); card.appendChild(body);
+    list.appendChild(card);
+  }
   host.appendChild(list);
 
   btnApply.onclick = async () => {
     const keys = [...list.querySelectorAll('input[type="checkbox"]:checked')].map(x => x.dataset.key);
     const resp = await WOStore.changeLastUpdateFromSelection(wo.id, keys);
     if (!resp.ok) { alert(resp.error || 'Failed'); return; }
+    await WOStore.markActivityLogReviewed(wo.id, true);
     const store = await loadStore();
     renderWOsTable(store);
-    openSidebarLastUpdate(store.wos[wo.id]);
+    closeSidebar();
   };
   renderWOsTable(await loadStore());
 }
