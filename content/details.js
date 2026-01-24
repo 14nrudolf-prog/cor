@@ -40,7 +40,9 @@ const INTERVAL_MS = 300;     // poll every 300 ms
 const MAX_WAIT_MS = 0;       // 0 = wait forever (give users as much time as needed)
 
 window.addEventListener('load', () => {
-  waitAndExtract();
+  if (!maybeNotifyError()) {
+    waitAndExtract();
+  }
 });
 
 function getIdFromUrl() {
@@ -160,7 +162,30 @@ function readProceduresProgress() {
 }
 
 // ----- POLL UNTIL READY -----
+function isErrorPage() {
+  const error = document.querySelector('.center-container h1');
+  return error && error.textContent && error.textContent.trim() === 'An Unexpected Error Has Occurred';
+}
+
+let errorNotified = false;
+
+function notifyDetailsError() {
+  if (errorNotified) return;
+  errorNotified = true;
+  chrome.runtime.sendMessage({ type: 'DETAILS_ERROR', ID: getIdFromUrl() });
+}
+
+function maybeNotifyError() {
+  if (errorNotified) return false;
+  if (isErrorPage()) {
+    notifyDetailsError();
+    return true;
+  }
+  return false;
+}
+
 function waitAndExtract() {
+  if (maybeNotifyError()) return;
   const ID = getIdFromUrl();
   const start = Date.now();
   let attempts = 0;
@@ -171,6 +196,7 @@ function waitAndExtract() {
   const timer = setInterval(() => {
     attempts++;
 
+    if (maybeNotifyError()) { clearInterval(timer); return; }
     const status = readStatus();
     const act = readActivityLog();
     const proc = readProceduresProgress();

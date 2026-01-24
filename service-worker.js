@@ -38,6 +38,9 @@ async function waitForContentScript(tabId, tries = 20, delay = 250) {
 }
 
 let currentUpdate = null;
+const MAX_SCRAPE_RETRIES = 3;
+const CORRIGO_ALERT_TEXT = 'there is currently an issue with corrigo, try scraping at a later time';
+let scrapeErrorRetries = 0;
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
 
@@ -69,6 +72,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
         console.warn('[SW] DETAILS_DATA without sender.tab – skipping close');
       }
       return handleDetailsData(msg.data, detailTabId);
+    }
+
+    case 'DETAILS_ERROR': {
+      return handleDetailsPageError(sender.tab && sender.tab.id);
     }
 
     case 'GENERATE_OVERVIEW': {
@@ -145,6 +152,7 @@ async function handleListData(listData) {
 
   // Batch detail tabs so we don't overload the browser; manual expansion of activity logs still happens per tab.
   currentUpdate.detailQueue = idsToFetch.slice();
+  currentUpdate.detailTabIds = new Set();
   currentUpdate.activeBatchIds = new Set();
   currentUpdate.batchSize = MAX_DETAIL_TABS_PER_BATCH;
   openNextDetailsBatch();
@@ -164,6 +172,10 @@ function openNextDetailsBatch() {
     chrome.tabs.create({
       url: `https://jll-oracle.corrigo.com/corpnet/workorder/workorderdetails.aspx/${id}`,
       active: false
+    }, tab => {
+      if (tab && tab.id != null && currentUpdate && currentUpdate.detailTabIds) {
+        currentUpdate.detailTabIds.add(tab.id);
+      }
     });
   });
   console.log(`[SW] opened details batch of ${batch.length}; ${queue.length} remaining`);
@@ -202,6 +214,7 @@ async function handleDetailsData(details, tabId) {
   }
 
   // keep the tab open in debug mode
+  if (tabId && currentUpdate && currentUpdate.detailTabIds) currentUpdate.detailTabIds.delete(tabId);
   if (!DEBUG_DETAILS && tabId) chrome.tabs.remove(tabId);
 
   // in debug mode: do not finish automatically
@@ -339,6 +352,66 @@ async function ensureDailyOverview(tabId) {
   return true;
 }
 
+async function closeAllDetailTabs() {
+  if (!currentUpdate || !currentUpdate.detailTabIds) return;
+  const ids = Array.from(currentUpdate.detailTabIds);
+  currentUpdate.detailTabIds.clear();
+  if (currentUpdate.activeBatchIds) currentUpdate.activeBatchIds.clear();
+  currentUpdate.detailQueue = [];
+  for (const id of ids) {
+    try { await chrome.tabs.remove(id); } catch (e) {}
+  }
+}
+
+async function closeCorrigoTabs() {
+  try {
+    const tabs = await tabsQuery({ url: ['*://jll-oracle.corrigo.com/*'] });
+    const ids = tabs.filter(t => t && t.id != null).map(t => t.id);
+    for (const id of ids) {
+      try { await chrome.tabs.remove(id); } catch (e) {}
+    }
+  } catch (e) {
+    console.warn('[SW] closeCorrigoTabs failed', e);
+  }
+}
+
+async function showCorrigoIssueAlert() {
+  const html = `<script>alert(${JSON.stringify(CORRIGO_ALERT_TEXT)});</script>`;
+  try {
+    await chrome.tabs.create({ url: 'data:text/html;charset=utf-8,' + encodeURIComponent(html) });
+  } catch (e) {
+    console.warn('[SW] showCorrigoIssueAlert failed', e);
+  }
+}
+
+function restartScrapeAfterError() {
+  setTimeout(() => {
+    if (!currentUpdate) {
+      scrapeToStore();
+    }
+  }, 1500);
+}
+
+async function handleDetailsPageError(tabId) {
+  console.warn('[SW] DETAILS_ERROR reported from tab', tabId);
+  if (!currentUpdate) return;
+  await closeAllDetailTabs();
+  const listTabId = currentUpdate.listTabId;
+  scrapeErrorRetries += 1;
+  const shouldAbort = scrapeErrorRetries >= MAX_SCRAPE_RETRIES;
+  if (listTabId) {
+    try { await chrome.tabs.remove(listTabId); } catch (e) {}
+  }
+  currentUpdate = null;
+  if (shouldAbort) {
+    await closeCorrigoTabs();
+    await showCorrigoIssueAlert();
+    scrapeErrorRetries = 0;
+    return;
+  }
+  restartScrapeAfterError();
+}
+
 function executeScriptFiles(tabId, files) {
   return new Promise((resolve, reject) => {
     try {
@@ -385,6 +458,7 @@ async function scrapeToStore() {
 }
 
 async function finishScrapeToStore() {
+  scrapeErrorRetries = 0;
   // Merge list+details into wo_store
   const listRows = Object.values(currentUpdate.listMap || {});
   const { seenIds } = await WOStore.upsertFromListRows(listRows);
@@ -416,6 +490,7 @@ async function finishScrapeToStore() {
  * 3) CSV-&-download
  */
 async function finishUpdate() {
+  scrapeErrorRetries = 0;
   const timestamp = Date.now();
   const snapKey   = `snapshot_${timestamp}`;
   const snapshot  = { ...currentUpdate.listMap };

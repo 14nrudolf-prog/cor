@@ -54,10 +54,11 @@ function getUpdatedAuthorColor(author) {
 
 function getContrastTextColor(color) {
   if (!color) return '#000';
-  const m = color.match(/hsl\\(\\s*(\\d+),\\s*([\\d.]+)%,\\s*([\\d.]+)%\\s*\\)/i);
+  const normalized = color.replace(/\\s+/g, '');
+  const m = normalized.match(/hsl\\((\\d+),(\\d+)%,(\\d+)%\\)/i);
   if (!m) return '#fff';
   const lightness = Number(m[3]);
-  return lightness < 55 ? '#fff' : '#000';
+  return lightness > 60 ? '#000' : '#fff';
 }
 
 function parseDateLoose(s) {
@@ -341,6 +342,16 @@ async function openSidebarActivity(wo) {
     head.appendChild(left); head.appendChild(right);
     const body = document.createElement('div'); body.className='log-text'; body.textContent = it.Comment || '';
     card.appendChild(head); card.appendChild(body);
+    card.classList.add('log-item-selectable');
+    card.classList.add('selectable');
+    const syncSelection = () => card.classList.toggle('selected', cb.checked);
+    cb.addEventListener('change', syncSelection);
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      if (e.target === cb) return;
+      cb.checked = !cb.checked;
+      syncSelection();
+    });
     list.appendChild(card);
     requestAnimationFrame(() => {
       const qualifiesForToggle = card.scrollHeight > 300;
