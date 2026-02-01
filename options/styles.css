@@ -11,6 +11,8 @@
   --row-reviewed: #194b36;
   --row-last-viewed: #13356f;
   --row-inactive-bg: #21242c;
+  --current-update-bg: #555555;
+  --current-update-chip: #7a1c1c;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -95,7 +97,13 @@ body {
 .log-item-highlighted .log-title,
 .log-item-highlighted .log-meta,
 .log-item-highlighted .log-text { color: #e2ffd8; }
+.log-item-current-update { background: var(--current-update-bg); border-color: #6b6b6b; color: #fff; }
+.log-item-current-update .log-title,
+.log-item-current-update .log-meta,
+.log-item-current-update .log-text { color: #fff; }
+.log-item-current-update .log-meta-date { background: rgba(0,0,0,0.35); border-color: rgba(255,255,255,0.2); color: #fff; }
 .log-head { display: flex; align-items: center; justify-content: space-between; gap:8px; }
+.log-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap;margin-bottom: 2px; }
 .log-text { position: relative; }
 .log-text-truncated { max-height: 100px; overflow: hidden; }
 .log-item.expanded { padding-bottom: 21px; }
@@ -120,6 +128,7 @@ body {
 .log-meta-date-highlighted { background: #11131c; color: #fff; border-color: rgba(255,255,255,0.1); }
 .log-text { margin-top: 4px; white-space: pre-wrap; }
 .author-chip { border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.2); display: inline-flex; align-items: center; }
+.current-update-chip { background: var(--current-update-chip); color: #fff; border-color: rgba(255,255,255,0.25); }
 .controls { display:flex; gap:8px; margin-top: 8px; }
 input[type="text"], textarea, select { background: #0f1320; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px; width: 100%; }
 textarea { min-height: 144px; }
@@ -131,4 +140,5 @@ button { background:#2a2f3a; color: var(--fg); border: 1px solid var(--line); bo
 button.primary { background: var(--accent); border-color: transparent; }
 .log-item-selectable { cursor: pointer; }
 .log-item.selectable:hover { background: rgba(255,255,255,0.04); }
+.log-item-current-update.selectable:hover { background: var(--current-update-bg); }
 .log-item.selected { border-color: var(--accent); }

@@ -42,6 +42,16 @@ const MAX_SCRAPE_RETRIES = 3;
 const CORRIGO_ALERT_TEXT = 'there is currently an issue with corrigo, try scraping at a later time';
 let scrapeErrorRetries = 0;
 
+function cancelCurrentUpdate(reason = 'manual restart') {
+  if (!currentUpdate) return;
+  currentUpdate.cancelled = true;
+  try {
+    if (currentUpdate.listTabId) chrome.tabs.remove(currentUpdate.listTabId);
+  } catch (e) {}
+  currentUpdate = null;
+  console.log('[SW] current update cancelled:', reason);
+}
+
 chrome.runtime.onMessage.addListener((msg, sender) => {
   console.log('[SW] got message:', msg, 'from', sender);
 
@@ -81,6 +91,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     }
 
     case 'SCRAPE_TO_STORE': {
+      cancelCurrentUpdate('scrape button clicked');
       return scrapeToStore();
     }
 
@@ -123,7 +134,7 @@ async function doUpdate(listTabId, opts) {
  *   - Opens one hidden tab per ID to fetch the 3 extra fields
  */
 async function handleListData(listData) {
-  if (!currentUpdate) return;
+  if (!currentUpdate || currentUpdate.cancelled) return;
   if (currentUpdate.listStarted) {
     console.warn('[SW] LIST_DATA duplicate ignored');
     return;
@@ -190,7 +201,7 @@ function openNextDetailsBatch() {
 let DEBUG_DETAILS = false;   // <-- set true to pause & keep tabs open
 
 async function handleDetailsData(details, tabId) {
-  if (!currentUpdate) return;
+  if (!currentUpdate || currentUpdate.cancelled) return;
   console.log('[SW] DETAILS_DATA:', details);
 
   const { ID } = details;
@@ -439,7 +450,7 @@ function executeScriptFiles(tabId, files) {
 
 async function scrapeToStore() {
   console.log(111)
-  if (currentUpdate) return; // skip if already scraping
+  if (currentUpdate) cancelCurrentUpdate('restart scrape');
   console.log(222)
   const listTabId = await openOrFocusListTab();
   if (listTabId == null) return;

@@ -13,16 +13,16 @@ function fmtDate(date) {
 const AS_OF_PARAM = 'nextWeekDay';
 const HIGHLIGHT_ACTIONS = new Set(['note', 'message received', 'started', 'picked up']);
 const AUTHOR_COLOR_VARIANTS = [
-  'hsl(0, 100%, 85%)',     // red light
-  'hsl(210, 100%, 85%)',   // blue light
+  'hsl(195, 90%, 85%)',    // cyan light
   'hsl(30, 100%, 85%)',    // orange light
   'hsl(280, 80%, 85%)',    // purple light
   'hsl(60, 100%, 90%)',    // yellow light
-  'hsl(0, 100%, 40%)',     // red dark
-  'hsl(210, 90%, 45%)',    // blue dark
+  'hsl(140, 60%, 85%)',    // green light
+  'hsl(195, 90%, 40%)',    // cyan dark
   'hsl(30, 100%, 45%)',    // orange dark
   'hsl(280, 80%, 45%)',    // purple dark
-  'hsl(60, 100%, 60%)'     // yellow dark
+  'hsl(60, 100%, 55%)',    // yellow dark
+  'hsl(140, 60%, 40%)'     // green dark
 ];
 let lastViewedWoId = null;
 let authorColorState = null;
@@ -31,6 +31,7 @@ async function ensureAuthorColorState() {
   if (authorColorState) return;
   const data = await chrome.storage.local.get('activityAuthorColorState');
   authorColorState = data.activityAuthorColorState || { map: {}, nextIndex: 0 };
+  if (normalizeAuthorColors()) persistAuthorColorState();
 }
 
 function persistAuthorColorState() {
@@ -42,6 +43,10 @@ function getUpdatedAuthorColor(author) {
   if (!author) return null;
   if (!authorColorState) return null;
   let info = authorColorState.map[author];
+  if (info && info.color && isRedHue(info.color)) {
+    info.color = pickStableAuthorColor(author);
+    persistAuthorColorState();
+  }
   if (!info) {
     const idx = authorColorState.nextIndex % AUTHOR_COLOR_VARIANTS.length;
     info = { color: AUTHOR_COLOR_VARIANTS[idx] };
@@ -58,6 +63,44 @@ function getContrastTextColor(color) {
   if (!m) return '#000';
   const lightness = Number(m[3]);
   return lightness >= 55 ? '#000' : '#fff';
+}
+
+function hashString(value) {
+  let h = 0;
+  for (let i = 0; i < value.length; i++) {
+    h = ((h << 5) - h) + value.charCodeAt(i);
+    h |= 0;
+  }
+  return h;
+}
+
+function pickStableAuthorColor(author) {
+  const idx = Math.abs(hashString(author || '')) % AUTHOR_COLOR_VARIANTS.length;
+  return AUTHOR_COLOR_VARIANTS[idx];
+}
+
+function isRedHue(color) {
+  const m = color && color.match(/hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)/i);
+  if (!m) return false;
+  const hue = Number(m[1]);
+  const sat = Number(m[2]);
+  if (isNaN(hue) || isNaN(sat)) return false;
+  const normalizedHue = ((hue % 360) + 360) % 360;
+  return sat >= 50 && (normalizedHue <= 15 || normalizedHue >= 345);
+}
+
+function normalizeAuthorColors() {
+  if (!authorColorState || !authorColorState.map) return false;
+  let changed = false;
+  Object.keys(authorColorState.map).forEach(author => {
+    const info = authorColorState.map[author];
+    if (!info || !info.color) return;
+    if (isRedHue(info.color)) {
+      info.color = pickStableAuthorColor(author);
+      changed = true;
+    }
+  });
+  return changed;
 }
 
 function parseDateLoose(s) {
@@ -285,6 +328,10 @@ async function openSidebarActivity(wo) {
   const host = document.getElementById('sidebarInner');
   host.innerHTML = '';
   await ensureAuthorColorState();
+  const currentUpdateKeys = new Set(
+    ((wo.lastUpdate && wo.lastUpdate.current && wo.lastUpdate.current.selectedLogKeys) || [])
+      .map(String)
+  );
 
   const h = document.createElement('div');
   h.className = 'section-h'; h.textContent = `Activity log — WO ${wo.woNumber}`;
@@ -311,13 +358,24 @@ async function openSidebarActivity(wo) {
   const list = document.createElement('div');
   (wo.activityLog || []).forEach((it, idx) => {
     const card = document.createElement('div'); card.className = 'log-item';
+    const key = it._key || String(idx);
+    const isCurrentUpdate = currentUpdateKeys.has(String(key));
     const normalizedAction = (it.ActionTitle || '').trim().toLowerCase();
     const hasComment = ((it.Comment || '').trim().length > 0);
     const isHighlightedAction = hasComment && HIGHLIGHT_ACTIONS.has(normalizedAction);
     if (isHighlightedAction) card.classList.add('log-item-highlighted');
+    if (isCurrentUpdate) card.classList.add('log-item-current-update');
     const head = document.createElement('div'); head.className='log-head';
     const left = document.createElement('div');
+    const titleRow = document.createElement('div'); titleRow.className='log-title-row';
     const title = document.createElement('div'); title.className='log-title'; title.textContent = it.ActionTitle || '';
+    titleRow.appendChild(title);
+    if (isCurrentUpdate) {
+      const currentChip = document.createElement('span');
+      currentChip.className = 'author-chip current-update-chip';
+      currentChip.textContent = 'current last update';
+      titleRow.appendChild(currentChip);
+    }
     const meta = document.createElement('div'); meta.className='log-meta muted';
     const dateSpan = document.createElement('span'); dateSpan.className='log-meta-date';
     dateSpan.textContent = fmtDateTimeHM(it.ActionDateTime || '');
@@ -334,9 +392,9 @@ async function openSidebarActivity(wo) {
       authorChip.textContent = authorName;
       meta.appendChild(authorChip);
     }
-    left.appendChild(title); left.appendChild(meta);
+    left.appendChild(titleRow); left.appendChild(meta);
     const right = document.createElement('div');
-    const cb = document.createElement('input'); cb.type='checkbox'; cb.dataset.key = it._key || String(idx);
+    const cb = document.createElement('input'); cb.type='checkbox'; cb.dataset.key = key;
     right.appendChild(cb);
     head.appendChild(left); head.appendChild(right);
     const body = document.createElement('div'); body.className='log-text'; body.textContent = it.Comment || '';
