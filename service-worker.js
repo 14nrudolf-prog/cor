@@ -48,6 +48,16 @@ function cancelCurrentUpdate(reason = 'manual restart') {
   try {
     if (currentUpdate.listTabId) chrome.tabs.remove(currentUpdate.listTabId);
   } catch (e) {}
+  try {
+    if (currentUpdate.detailTabIds && currentUpdate.detailTabIds.size) {
+      for (const id of currentUpdate.detailTabIds) {
+        try { chrome.tabs.remove(id); } catch (e) {}
+      }
+      currentUpdate.detailTabIds.clear();
+    }
+    if (currentUpdate.activeBatchIds) currentUpdate.activeBatchIds.clear();
+    if (currentUpdate.detailQueue) currentUpdate.detailQueue = [];
+  } catch (e) {}
   currentUpdate = null;
   console.log('[SW] current update cancelled:', reason);
 }
