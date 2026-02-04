@@ -38,6 +38,7 @@ async function waitForContentScript(tabId, tries = 20, delay = 250) {
 }
 
 let currentUpdate = null;
+let pendingPrepTabId = null;
 const MAX_SCRAPE_RETRIES = 3;
 const CORRIGO_ALERT_TEXT = 'there is currently an issue with corrigo, try scraping at a later time';
 let scrapeErrorRetries = 0;
@@ -461,6 +462,10 @@ function executeScriptFiles(tabId, files) {
 async function scrapeToStore() {
   console.log(111)
   if (currentUpdate) cancelCurrentUpdate('restart scrape');
+  if (pendingPrepTabId != null) {
+    try { await chrome.tabs.remove(pendingPrepTabId); } catch (e) {}
+    pendingPrepTabId = null;
+  }
   console.log(222)
   const listTabId = await openOrFocusListTab();
   if (listTabId == null) return;
@@ -468,9 +473,13 @@ async function scrapeToStore() {
   const okView = await ensureDailyOverview(listTabId);
   if (!okView) {
     console.warn('[SW] Daily Overview not selected');
+    // Keep this tab open so the user can log in / select "Daily Overview";
+    // close it on the next scrape click before opening a fresh tab.
+    pendingPrepTabId = listTabId;
     currentUpdate = null;
     return;
   }
+  pendingPrepTabId = null;
 
   // init update state for store-mode
   currentUpdate = {

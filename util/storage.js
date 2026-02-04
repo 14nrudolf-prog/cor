@@ -45,6 +45,14 @@
     ].join('||');
   }
 
+  function isOnlyEmptyCreatedActivityLog(activityLog) {
+    if (!Array.isArray(activityLog) || activityLog.length !== 1) return false;
+    const item = activityLog[0] || {};
+    const action = String(item.ActionTitle || '').trim().toLowerCase();
+    const comment = String(item.Comment || '').trim();
+    return action === 'created' && comment === '';
+  }
+
   async function getStore() {
     const all = await chrome.storage.local.get(STORAGE_KEY);
     const store = all[STORAGE_KEY] || { wos: {} };
@@ -126,7 +134,10 @@
     const normalized = arr.map(it => ({ ...it, _key: makeLogKey(it) }));
     const hasNewLogEntry = normalized.some(it => it._key && !prevKeys.has(it._key));
     wo.activityLog = normalized;
-    if (hasNewLogEntry) {
+    if (isOnlyEmptyCreatedActivityLog(normalized)) {
+      // Only an empty "created" entry means there is nothing to review yet.
+      wo.activityLogReviewed = true;
+    } else if (hasNewLogEntry) {
       wo.activityLogReviewed = false;
     }
     wo.lastSeenAt = now();
