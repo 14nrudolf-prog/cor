@@ -11,7 +11,7 @@ function fmtDate(date) {
   return `${y}-${m}-${dd}`;
 }
 const AS_OF_PARAM = 'nextWeekDay';
-const HIGHLIGHT_ACTIONS = new Set(['note', 'message received', 'started', 'picked up']);
+const HIGHLIGHT_ACTIONS = new Set(['note', 'started', 'picked up']);
 const AUTHOR_COLOR_VARIANTS = [
   'hsl(195, 90%, 85%)',    // cyan light
   'hsl(30, 100%, 85%)',    // orange light
@@ -106,6 +106,13 @@ function normalizeAuthorColors() {
 function parseDateLoose(s) {
   const d = new Date(s || '');
   return isNaN(d) ? null : d;
+}
+
+function shouldHighlightAction(actionTitle, commentText) {
+  const normalizedAction = (actionTitle || '').trim().toLowerCase();
+  const hasComment = ((commentText || '').trim().length > 0);
+  if (!hasComment) return false;
+  return HIGHLIGHT_ACTIONS.has(normalizedAction) || normalizedAction.startsWith('message');
 }
 
 function getLastUpdateDate(wo) {
@@ -360,9 +367,7 @@ async function openSidebarActivity(wo) {
     const card = document.createElement('div'); card.className = 'log-item';
     const key = it._key || String(idx);
     const isCurrentUpdate = currentUpdateKeys.has(String(key));
-    const normalizedAction = (it.ActionTitle || '').trim().toLowerCase();
-    const hasComment = ((it.Comment || '').trim().length > 0);
-    const isHighlightedAction = hasComment && HIGHLIGHT_ACTIONS.has(normalizedAction);
+    const isHighlightedAction = shouldHighlightAction(it.ActionTitle, it.Comment);
     if (isHighlightedAction) card.classList.add('log-item-highlighted');
     if (isCurrentUpdate) card.classList.add('log-item-current-update');
     const head = document.createElement('div'); head.className='log-head';
