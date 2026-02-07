@@ -35,6 +35,7 @@ const NEVER_HIGHLIGHT_ACTIONS = new Set([
   'due by modified',
   'priority modified'
 ]);
+const HIGHLIGHT_RULES_STORAGE_KEY = 'activityHighlightRules';
 const AUTHOR_COLOR_VARIANTS = [
   'hsl(195, 90%, 85%)',    // cyan light
   'hsl(30, 100%, 85%)',    // orange light
@@ -49,12 +50,32 @@ const AUTHOR_COLOR_VARIANTS = [
 ];
 let lastViewedWoId = null;
 let authorColorState = null;
+let highlightRules = { always: new Set(), never: new Set() };
 
 async function ensureAuthorColorState() {
   if (authorColorState) return;
   const data = await chrome.storage.local.get('activityAuthorColorState');
   authorColorState = data.activityAuthorColorState || { map: {}, nextIndex: 0 };
   if (normalizeAuthorColors()) persistAuthorColorState();
+}
+
+async function ensureHighlightRules() {
+  if (highlightRules && highlightRules._loaded) return;
+  const data = await chrome.storage.local.get(HIGHLIGHT_RULES_STORAGE_KEY);
+  const raw = data[HIGHLIGHT_RULES_STORAGE_KEY] || { always: [], never: [] };
+  highlightRules = {
+    always: new Set((raw.always || []).map(s => String(s).trim().toLowerCase()).filter(Boolean)),
+    never: new Set((raw.never || []).map(s => String(s).trim().toLowerCase()).filter(Boolean)),
+    _loaded: true
+  };
+}
+
+function persistHighlightRules() {
+  const payload = {
+    always: Array.from(highlightRules.always || []),
+    never: Array.from(highlightRules.never || [])
+  };
+  chrome.storage.local.set({ [HIGHLIGHT_RULES_STORAGE_KEY]: payload });
 }
 
 function persistAuthorColorState() {
@@ -135,6 +156,8 @@ function getHighlightKind(actionTitle, commentText) {
   const normalizedAction = (actionTitle || '').trim().toLowerCase();
   const hasComment = ((commentText || '').trim().length > 0);
   if (!hasComment) return null;
+  if (highlightRules.always && highlightRules.always.has(normalizedAction)) return 'always';
+  if (highlightRules.never && highlightRules.never.has(normalizedAction)) return null;
   if (NEVER_HIGHLIGHT_ACTIONS.has(normalizedAction)) return null;
   if (HIGHLIGHT_ACTIONS.has(normalizedAction)) return 'always';
   return 'unknown';
@@ -360,6 +383,7 @@ async function openSidebarActivity(wo) {
   const host = document.getElementById('sidebarInner');
   host.innerHTML = '';
   await ensureAuthorColorState();
+  await ensureHighlightRules();
   const currentUpdateKeys = new Set(
     ((wo.lastUpdate && wo.lastUpdate.current && wo.lastUpdate.current.selectedLogKeys) || [])
       .map(String)
@@ -564,6 +588,7 @@ async function refreshWOs() {
   const store = await loadStore();
   await refreshHeader();
   await ensureAuthorColorState();
+  await ensureHighlightRules();
   renderWOsTable(store);
 }
 
@@ -658,5 +683,249 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.runtime.onMessage.addListener(function(msg){
     if (msg && msg.type === 'STORE_UPDATED') refreshWOs();
   });
+  initSettingsModal();
   refreshWOs();
 });
+
+function normalizeActionKey(actionTitle) {
+  return String(actionTitle || '').trim().toLowerCase();
+}
+
+function buildActionMapFromStore(store) {
+  const items = [];
+  Object.values(store.wos || {}).forEach(wo => {
+    const log = wo.activityLog || [];
+    log.forEach(it => {
+      const actionKey = normalizeActionKey(it.ActionTitle);
+      items.push({
+        actionKey,
+        actionTitle: it.ActionTitle || '',
+        comment: it.Comment || '',
+        actionBy: it.ActionBy || '',
+        actionDateTime: it.ActionDateTime || '',
+        woNumber: wo.woNumber || '',
+        woId: wo.id || ''
+      });
+    });
+  });
+  const map = {};
+  items.forEach(item => {
+    if (!map[item.actionKey]) {
+      map[item.actionKey] = { label: item.actionTitle || item.actionKey || '(no action)', items: [] };
+    }
+    map[item.actionKey].items.push(item);
+  });
+  return map;
+}
+
+function renderLogItemFromData(item, opts) {
+  const card = document.createElement('div'); card.className = 'log-item';
+  if (opts && opts.selectable) {
+    card.classList.add('log-item-selectable');
+    card.classList.add('selectable');
+  }
+  const head = document.createElement('div'); head.className = 'log-head';
+  const left = document.createElement('div');
+  const titleRow = document.createElement('div'); titleRow.className = 'log-title-row';
+  const title = document.createElement('div'); title.className = 'log-title'; title.textContent = item.actionTitle || '';
+  titleRow.appendChild(title);
+  left.appendChild(titleRow);
+  const meta = document.createElement('div'); meta.className = 'log-meta muted';
+  const dateSpan = document.createElement('span'); dateSpan.className = 'log-meta-date';
+  dateSpan.textContent = fmtDateTimeHM(item.actionDateTime || '');
+  meta.appendChild(dateSpan);
+  if (item.actionBy) {
+    const authorChip = document.createElement('span'); authorChip.className = 'author-chip';
+    const color = getUpdatedAuthorColor(item.actionBy);
+    if (color) {
+      authorChip.style.backgroundColor = color;
+      authorChip.style.color = getContrastTextColor(color);
+    }
+    authorChip.textContent = item.actionBy;
+    meta.appendChild(authorChip);
+  }
+  if (item.woNumber) {
+    const woChip = document.createElement('span'); woChip.className = 'author-chip';
+    woChip.textContent = `WO ${item.woNumber}`;
+    meta.appendChild(woChip);
+  }
+  left.appendChild(meta);
+  const right = document.createElement('div');
+  let cb = null;
+  if (opts && opts.selectable) {
+    cb = document.createElement('input'); cb.type = 'checkbox';
+    cb.dataset.actionKey = item.actionKey || '';
+    right.appendChild(cb);
+  }
+  head.appendChild(left); head.appendChild(right);
+  const body = document.createElement('div'); body.className = 'log-text'; body.textContent = item.comment || '';
+  card.appendChild(head); card.appendChild(body);
+  if (cb) {
+    const syncSelection = () => card.classList.toggle('selected', cb.checked);
+    cb.addEventListener('change', syncSelection);
+    card.addEventListener('click', (e) => {
+      if (e.target === cb) return;
+      cb.checked = !cb.checked;
+      syncSelection();
+    });
+  }
+  return card;
+}
+
+function renderPendingTab(host, actionMap, pendingKeys) {
+  host.innerHTML = '';
+  if (!pendingKeys.length) {
+    const empty = document.createElement('div'); empty.className = 'modal-empty';
+    empty.textContent = 'No pending actions.';
+    host.appendChild(empty);
+    return;
+  }
+  pendingKeys.forEach(key => {
+    const group = actionMap[key];
+    if (!group) return;
+    const title = document.createElement('div'); title.className = 'modal-section-title';
+    title.textContent = group.label || key;
+    host.appendChild(title);
+    group.items.forEach(item => {
+      host.appendChild(renderLogItemFromData(item, { selectable: true }));
+    });
+  });
+}
+
+function renderActionTab(host, actionMap, actionKeys, selectedKey, onSelect) {
+  host.innerHTML = '';
+  const keys = actionKeys.slice().sort();
+  if (!keys.length) {
+    const empty = document.createElement('div'); empty.className = 'modal-empty';
+    empty.textContent = 'No actions.';
+    host.appendChild(empty);
+    return;
+  }
+  const list = document.createElement('div'); list.className = 'action-list';
+  const itemsHost = document.createElement('div');
+  let activeKey = (selectedKey && keys.includes(selectedKey)) ? selectedKey : keys[0];
+  const renderItems = (key) => {
+    itemsHost.innerHTML = '';
+    const group = actionMap[key];
+    if (!group || !group.items || !group.items.length) {
+      const empty = document.createElement('div'); empty.className = 'modal-empty';
+      empty.textContent = 'No items for this action yet.';
+      itemsHost.appendChild(empty);
+      return;
+    }
+    group.items.forEach(item => itemsHost.appendChild(renderLogItemFromData(item)));
+  };
+  keys.forEach(key => {
+    const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'action-chip';
+    chip.textContent = (actionMap[key] && actionMap[key].label) ? actionMap[key].label : key;
+    chip.classList.toggle('active', key === activeKey);
+    chip.onclick = () => {
+      activeKey = key;
+      list.querySelectorAll('.action-chip').forEach(c => c.classList.toggle('active', c === chip));
+      renderItems(key);
+      if (typeof onSelect === 'function') onSelect(key);
+    };
+    list.appendChild(chip);
+  });
+  host.appendChild(list);
+  host.appendChild(itemsHost);
+  renderItems(activeKey);
+  if (typeof onSelect === 'function') onSelect(activeKey);
+}
+
+function initSettingsModal() {
+  const btn = document.getElementById('settingsBtn');
+  const modal = document.getElementById('settingsModal');
+  const closeBtn = document.getElementById('settingsClose');
+  const btnSetAlways = document.getElementById('btnSetAlways');
+  const btnSetNever = document.getElementById('btnSetNever');
+  const btnMoveToAlways = document.getElementById('btnMoveToAlways');
+  const btnMoveToNever = document.getElementById('btnMoveToNever');
+  const tabButtons = Array.from(document.querySelectorAll('.modal-tab'));
+  const tabPending = document.getElementById('modalTabPending');
+  const tabAlways = document.getElementById('modalTabAlways');
+  const tabNever = document.getElementById('modalTabNever');
+  if (!btn || !modal || !closeBtn) return;
+
+  let selectedAlwaysKey = null;
+  let selectedNeverKey = null;
+
+  const setActiveTab = (name) => {
+    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    tabPending.classList.toggle('active', name === 'pending');
+    tabAlways.classList.toggle('active', name === 'always');
+    tabNever.classList.toggle('active', name === 'never');
+    const showActions = (name === 'pending');
+    btnSetAlways.style.display = showActions ? '' : 'none';
+    btnSetNever.style.display = showActions ? '' : 'none';
+    btnMoveToAlways.hidden = name !== 'never';
+    btnMoveToNever.hidden = name !== 'always';
+  };
+
+  const openModal = async () => {
+    await ensureAuthorColorState();
+    await ensureHighlightRules();
+    const store = await loadStore();
+    const actionMap = buildActionMapFromStore(store);
+    const alwaysKeys = new Set([...HIGHLIGHT_ACTIONS, ...(highlightRules.always || [])]);
+    const neverKeys = new Set([...NEVER_HIGHLIGHT_ACTIONS, ...(highlightRules.never || [])]);
+    (highlightRules.always || []).forEach(k => neverKeys.delete(k));
+    (highlightRules.never || []).forEach(k => alwaysKeys.delete(k));
+    const allKeys = Object.keys(actionMap);
+    const pendingKeys = allKeys.filter(k => !alwaysKeys.has(k) && !neverKeys.has(k));
+
+    renderPendingTab(tabPending, actionMap, pendingKeys);
+    renderActionTab(tabAlways, actionMap, Array.from(alwaysKeys), selectedAlwaysKey, (k) => { selectedAlwaysKey = k; });
+    renderActionTab(tabNever, actionMap, Array.from(neverKeys), selectedNeverKey, (k) => { selectedNeverKey = k; });
+    setActiveTab('pending');
+    modal.hidden = false;
+  };
+
+  const closeModal = () => { modal.hidden = true; };
+
+  btn.onclick = openModal;
+  closeBtn.onclick = closeModal;
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+  tabButtons.forEach(b => b.onclick = () => setActiveTab(b.dataset.tab));
+
+  const applySelection = async (target) => {
+    await ensureHighlightRules();
+    const selected = Array.from(tabPending.querySelectorAll('input[type="checkbox"]:checked'));
+    const actionKeys = Array.from(new Set(selected.map(x => String(x.dataset.actionKey || '').trim()).filter(Boolean)));
+    if (!actionKeys.length) return;
+    actionKeys.forEach(k => {
+      if (target === 'always') {
+        highlightRules.never.delete(k);
+        highlightRules.always.add(k);
+      } else {
+        highlightRules.always.delete(k);
+        highlightRules.never.add(k);
+      }
+    });
+    persistHighlightRules();
+    openModal();
+  };
+
+  btnSetAlways.onclick = () => applySelection('always');
+  btnSetNever.onclick = () => applySelection('never');
+
+  const moveAction = async (from, to) => {
+    await ensureHighlightRules();
+    const key = (from === 'always') ? selectedAlwaysKey : selectedNeverKey;
+    if (!key) return;
+    if (to === 'always') {
+      highlightRules.never.delete(key);
+      highlightRules.always.add(key);
+    } else {
+      highlightRules.always.delete(key);
+      highlightRules.never.add(key);
+    }
+    persistHighlightRules();
+    openModal();
+  };
+
+  if (btnMoveToAlways) btnMoveToAlways.onclick = () => moveAction('never', 'always');
+  if (btnMoveToNever) btnMoveToNever.onclick = () => moveAction('always', 'never');
+}

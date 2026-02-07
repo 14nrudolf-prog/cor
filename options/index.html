@@ -9,6 +9,7 @@
 <body>
   <header class="topbar">
     <h1>Corrigo Work-Order Helper</h1>
+    <button id="settingsBtn" class="settings-btn" type="button">Settings</button>
   </header>
 
   <nav class="tabs">
@@ -72,6 +73,31 @@
 
   <script src="../util/storage.js"></script>
   <script src="app.js"></script>
+
+  <div id="settingsModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Highlight Settings</div>
+        <div class="modal-actions">
+          <button id="btnSetAlways" type="button" class="primary">Always highlight</button>
+          <button id="btnSetNever" type="button">Never highlight</button>
+          <button id="btnMoveToAlways" type="button" class="primary" hidden>Move to always</button>
+          <button id="btnMoveToNever" type="button" hidden>Move to never</button>
+          <button id="settingsClose" type="button">Close</button>
+        </div>
+      </div>
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="pending">Pending</button>
+        <button class="modal-tab" data-tab="always">Always highlight</button>
+        <button class="modal-tab" data-tab="never">Never highlight</button>
+      </div>
+      <div class="modal-body">
+        <div id="modalTabPending" class="modal-panel active"></div>
+        <div id="modalTabAlways" class="modal-panel"></div>
+        <div id="modalTabNever" class="modal-panel"></div>
+      </div>
+    </div>
+  </div>
 </body>
   
 </html>
