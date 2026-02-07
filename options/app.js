@@ -846,6 +846,7 @@ function initSettingsModal() {
   const tabAlways = document.getElementById('modalTabAlways');
   const tabNever = document.getElementById('modalTabNever');
   if (!btn || !modal || !closeBtn) return;
+  modal.hidden = true;
 
   let selectedAlwaysKey = null;
   let selectedNeverKey = null;
