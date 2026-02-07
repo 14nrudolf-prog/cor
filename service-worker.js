@@ -289,7 +289,7 @@ async function ensureListContentScript(tabId) {
 }
 
 const LIST_PAGE_URL_FRAGMENT = '/corpnet/workorder/workorderlist.aspx';
-const SCRAPE_PREP_ALERT = 'make sure you are logged into corrigo and the daily overview list selected on the top right. After you checked these 2 things, click scrape again.';
+const SCRAPE_PREP_ALERT = 'check\n  logged in to corrigo?\n  daily overview selected?\nthen scrape again';
 
 async function alertScrapePrep(tabId) {
   try {
