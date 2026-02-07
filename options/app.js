@@ -11,7 +11,30 @@ function fmtDate(date) {
   return `${y}-${m}-${dd}`;
 }
 const AS_OF_PARAM = 'nextWeekDay';
-const HIGHLIGHT_ACTIONS = new Set(['note', 'started', 'picked up']);
+const HIGHLIGHT_ACTIONS = new Set([
+  'note',
+  'message received',
+  'message sent',
+  'picked up',
+  'wo item added/deleted',
+  'stopped',
+  'started',
+  'flagged',
+  're-opened',
+  'vendor invoice status change',
+  'completed',
+  'flag cleared'
+]);
+const NEVER_HIGHLIGHT_ACTIONS = new Set([
+  'sent to service pro',
+  'document attached',
+  'created',
+  'assignment changed',
+  'acknowledge by modified',
+  'on site by modified',
+  'due by modified',
+  'priority modified'
+]);
 const AUTHOR_COLOR_VARIANTS = [
   'hsl(195, 90%, 85%)',    // cyan light
   'hsl(30, 100%, 85%)',    // orange light
@@ -108,11 +131,13 @@ function parseDateLoose(s) {
   return isNaN(d) ? null : d;
 }
 
-function shouldHighlightAction(actionTitle, commentText) {
+function getHighlightKind(actionTitle, commentText) {
   const normalizedAction = (actionTitle || '').trim().toLowerCase();
   const hasComment = ((commentText || '').trim().length > 0);
-  if (!hasComment) return false;
-  return HIGHLIGHT_ACTIONS.has(normalizedAction) || normalizedAction.startsWith('message');
+  if (!hasComment) return null;
+  if (NEVER_HIGHLIGHT_ACTIONS.has(normalizedAction)) return null;
+  if (HIGHLIGHT_ACTIONS.has(normalizedAction)) return 'always';
+  return 'unknown';
 }
 
 function getLastUpdateDate(wo) {
@@ -367,8 +392,9 @@ async function openSidebarActivity(wo) {
     const card = document.createElement('div'); card.className = 'log-item';
     const key = it._key || String(idx);
     const isCurrentUpdate = currentUpdateKeys.has(String(key));
-    const isHighlightedAction = shouldHighlightAction(it.ActionTitle, it.Comment);
-    if (isHighlightedAction) card.classList.add('log-item-highlighted');
+    const highlightKind = getHighlightKind(it.ActionTitle, it.Comment);
+    if (highlightKind === 'always') card.classList.add('log-item-highlighted');
+    if (highlightKind === 'unknown') card.classList.add('log-item-highlight-unknown');
     if (isCurrentUpdate) card.classList.add('log-item-current-update');
     const head = document.createElement('div'); head.className='log-head';
     const left = document.createElement('div');
@@ -384,7 +410,8 @@ async function openSidebarActivity(wo) {
     const meta = document.createElement('div'); meta.className='log-meta muted';
     const dateSpan = document.createElement('span'); dateSpan.className='log-meta-date';
     dateSpan.textContent = fmtDateTimeHM(it.ActionDateTime || '');
-    if (isHighlightedAction) dateSpan.classList.add('log-meta-date-highlighted');
+    if (highlightKind === 'always') dateSpan.classList.add('log-meta-date-highlighted');
+    if (highlightKind === 'unknown') dateSpan.classList.add('log-meta-date-highlight-unknown');
     meta.appendChild(dateSpan);
     const authorName = (it.ActionBy || '').trim();
     if (authorName) {

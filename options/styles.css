@@ -97,6 +97,10 @@ body {
 .log-item-highlighted .log-title,
 .log-item-highlighted .log-meta,
 .log-item-highlighted .log-text { color: #e2ffd8; }
+.log-item-highlight-unknown { background: #6a5a1a; border-color: #8a7520; color: #fff2cc; }
+.log-item-highlight-unknown .log-title,
+.log-item-highlight-unknown .log-meta,
+.log-item-highlight-unknown .log-text { color: #fff2cc; }
 .log-item-current-update { background: var(--current-update-bg); border-color: #6b6b6b; color: #fff; }
 .log-item-current-update .log-title,
 .log-item-current-update .log-meta,
@@ -126,6 +130,7 @@ body {
 .log-meta { color: var(--muted); font-size: 12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .log-meta-date { padding: 0 4px; border-radius: 4px; border: 1px solid transparent; background: rgba(255,255,255,0.05); }
 .log-meta-date-highlighted { background: #11131c; color: #fff; border-color: rgba(255,255,255,0.1); }
+.log-meta-date-highlight-unknown { background: rgba(0,0,0,0.35); color: #fff2cc; border-color: rgba(255,255,255,0.2); }
 .log-text { margin-top: 4px; white-space: pre-wrap; }
 .author-chip { border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.2); display: inline-flex; align-items: center; }
 .current-update-chip { background: var(--current-update-chip); color: #fff; border-color: rgba(255,255,255,0.25); }
